@@ -301,7 +301,6 @@ switch ($locale) {
 
         #Unnecessary Windows 10/11 AppX Apps
         "Microsoft.BingNews"
-        "Microsoft.GetHelp"
         "Microsoft.Getstarted"
         "Microsoft.Messaging"
         "Microsoft.Microsoft3DViewer"
@@ -311,18 +310,14 @@ switch ($locale) {
         "Microsoft.MixedReality.Portal"
         "Microsoft.News"
         "Microsoft.Office.Lens"
-        "Microsoft.Office.OneNote"
         "Microsoft.Office.Sway"
         "Microsoft.OneConnect"
         "Microsoft.People"
         "Microsoft.Print3D"
-        "Microsoft.RemoteDesktop"
         "Microsoft.SkypeApp"
         "Microsoft.StorePurchaseApp"
         "Microsoft.Office.Todo.List"
         "Microsoft.Whiteboard"
-        "Microsoft.WindowsAlarms"
-        #"Microsoft.WindowsCamera"
         "microsoft.windowscommunicationsapps"
         "Microsoft.WindowsFeedbackHub"
         "Microsoft.WindowsMaps"
@@ -334,8 +329,6 @@ switch ($locale) {
         "Microsoft.XboxSpeechToTextOverlay"
         "Microsoft.ZuneMusic"
         "Microsoft.ZuneVideo"
-        "MicrosoftTeams"
-        "Microsoft.YourPhone"
         "Microsoft.XboxGamingOverlay_5.721.10202.0_neutral_~_8wekyb3d8bbwe"
         "Microsoft.GamingApp"
         "SpotifyAB.SpotifyMusic"
@@ -362,6 +355,13 @@ switch ($locale) {
         "clipchamp.clipchamp"
         "*gaming*"
         "MicrosoftCorporationII.MicrosoftFamily"
+        #"Microsoft.GetHelp"
+        #"Microsoft.Office.OneNote"
+        #"Microsoft.RemoteDesktop"
+        #"MicrosoftTeams"
+        #"Microsoft.WindowsAlarms"
+        #"Microsoft.WindowsCamera"
+        #"Microsoft.YourPhone"
         #Optional: Typically not removed but you can if you need to for some reason
         #"*Microsoft.Advertising.Xaml_10.1712.5.0_x64__8wekyb3d8bbwe*"
         #"*Microsoft.Advertising.Xaml_10.1712.5.0_x86__8wekyb3d8bbwe*"
@@ -1217,7 +1217,9 @@ foreach($obj32 in $InstalledSoftware32){
     }
 }
 
+<#
 ##Remove Chrome
+
 $chrome32path = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Google Chrome"
 
 if ($null -ne $chrome32path) {
@@ -1245,7 +1247,10 @@ Start-Process "$directory\Google\Chrome\Application\$version\Installer\setup.exe
 }
 
 
+
 }
+
+#>
 
 }
 
