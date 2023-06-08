@@ -781,7 +781,7 @@ $registryPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat"
 If (!(Test-Path $registryPath)) { 
     New-Item $registryPath
 }
-Set-ItemProperty $registryPath "ChatIcon" -Value 2
+Set-ItemProperty $registryPath "ChatIcon" -Value 3
 write-host "Removed Teams Chat"
 
 
