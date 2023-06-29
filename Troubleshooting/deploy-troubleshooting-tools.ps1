@@ -67,7 +67,7 @@ if ($liveversion -ne $currentversion) {
 write-host "Script has been updated, please download the latest version from $liveuri" -ForegroundColor Red
 }
 }
-Get-ScriptVersion -liveuri "https://raw.githubusercontent.com/andrew-s-taylor/public/main/Troubleshooting/deploy-troubleshooting-tools.ps1"
+Get-ScriptVersion -liveuri "https://raw.githubusercontent.com/JorgaWetzel/public/main/Troubleshooting/deploy-troubleshooting-tools.ps1"
 
 ##Create a folder to store everything
 $toolsfolder = "C:\ProgramData\ServiceUI"
@@ -97,14 +97,14 @@ Install-Script -Name Get-AutopilotDiagnostics -Force
 
 ##Download ServiceUI
 Invoke-WebRequest `
--Uri "https://github.com/andrew-s-taylor/public/raw/main/Troubleshooting/ServiceUI.exe" `
+-Uri "https://github.com/JorgaWetzel/public/raw/main/Troubleshooting/ServiceUI.exe" `
 -OutFile $templateFilePath `
 -UseBasicParsing `
 -Headers @{"Cache-Control"="no-cache"}
 
 ##Download CMTrace
 Invoke-WebRequest `
--Uri "https://github.com/andrew-s-taylor/public/raw/main/Troubleshooting/CMTrace.exe" `
+-Uri "https://github.com/JorgaWetzel/public/raw/main/Troubleshooting/CMTrace.exe" `
 -OutFile $cmtraceoutput `
 -UseBasicParsing `
 -Headers @{"Cache-Control"="no-cache"}
@@ -112,7 +112,7 @@ Invoke-WebRequest `
 
 ##Download tools.ps1
 Invoke-WebRequest `
--Uri "https://github.com/andrew-s-taylor/public/raw/main/Troubleshooting/tools.ps1" `
+-Uri "https://github.com/JorgaWetzel/public/raw/main/Troubleshooting/tools.ps1" `
 -OutFile $scriptoutput `
 -UseBasicParsing `
 -Headers @{"Cache-Control"="no-cache"}
@@ -128,7 +128,7 @@ $file2="C:\ProgramData\ServiceUI\shiftf10.ps1"
 $string | out-file $file2
 
 ##Check if we're during OOBE
-$intunepath = “HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps”
+$intunepath = "HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\Win32Apps"
 $intunecomplete = @(Get-ChildItem $intunepath).count
 if ($intunecomplete -lt 2) {
 
