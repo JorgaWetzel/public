@@ -49,7 +49,7 @@ $AutopilotMenu.TopMost     = $false
 $AutopilotMenu.BackColor   = [System.Drawing.ColorTranslator]::FromHtml("#ffffff")
 
 $Label1                          = New-Object system.Windows.Forms.Label
-$Label1.text                     = "Created by Andrew Taylor (andrewstaylor.com)"
+$Label1.text                     = "Troubleshooting Tools für Intune Autopilot"
 $Label1.AutoSize                 = $true
 $Label1.width                    = 25
 $Label1.height                   = 10
