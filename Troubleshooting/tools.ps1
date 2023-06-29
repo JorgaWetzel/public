@@ -138,3 +138,14 @@ $log2.Add_Click({
 
 
 [void]$AutopilotMenu.ShowDialog()
+
+
+## Install-Module IntuneStuff -Force
+#Install-Module IntuneStuff -Force
+
+## show Win32App data (source will be client Intune log file combined with registry data)
+#Get-IntuneWin32AppLocally | Out-GridView
+
+# show Win32App data (source will be just client Intune log file)
+#Get-IntuneLogWin32AppData
+#Get-IntuneLogWin32AppReportingResultData
