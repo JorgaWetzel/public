@@ -44,7 +44,7 @@ Add-Type -AssemblyName System.Windows.Forms
 
 $AutopilotMenu             = New-Object system.Windows.Forms.Form
 $AutopilotMenu.ClientSize  = New-Object System.Drawing.Point(396,431)
-$AutopilotMenu.text        = "Autopilot Tools"
+$AutopilotMenu.text        = "oneICT Autopilot Tools"
 $AutopilotMenu.TopMost     = $false
 $AutopilotMenu.BackColor   = [System.Drawing.ColorTranslator]::FromHtml("#ffffff")
 
