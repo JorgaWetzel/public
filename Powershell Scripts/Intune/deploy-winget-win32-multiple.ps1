@@ -1,5 +1,5 @@
 <#PSScriptInfo
-.VERSION 4.0.2
+.VERSION 4.0.3
 .GUID f08902ff-3e2f-4a51-995d-c686fc307325
 .AUTHOR AndrewTaylor
 .DESCRIPTION Creates Win32 apps, AAD groups and Proactive Remediations to keep apps updated
@@ -30,12 +30,12 @@ App ID and App name (from Gridview)
 .OUTPUTS
 In-Line Outputs
 .NOTES
-  Version:        4.0.2
+  Version:        4.0.3
   Author:         Andrew Taylor
   Twitter:        @AndrewTaylor_2
   WWW:            andrewstaylor.com
   Creation Date:  30/09/2022
-  Last Modified:  06/07/2023
+  Last Modified:  24/07/2023
   Purpose/Change: Initial script development
   Update: Special thanks to Nick Brown (https://twitter.com/techienickb) for re-writing functions to use MG.graph
   Update: Fixed 2 functions with the same name
@@ -47,6 +47,7 @@ In-Line Outputs
   Update: Added parameters for automation
   Update: Added option to specify group names
   Update: Fix for Graph SDK v2
+  Update: Further fix for SDK v2
 .EXAMPLE
 N/A
 #>
@@ -300,7 +301,7 @@ write-host "Script has been updated, please download the latest version from $li
 }
 }
 if (!$WebHookData){
-    Get-ScriptVersion -liveuri "https://raw.githubusercontent.com/andrew-s-taylor/public/main/Powershell%20Scripts/Intune/intune-backup-restore-withgui.ps1"
+    Get-ScriptVersion -liveuri "https://raw.githubusercontent.com/andrew-s-taylor/public/main/Powershell%20Scripts/Intune/deploy-winget-win32-multiple.ps1"
     }
 
 
@@ -367,141 +368,40 @@ else {
 ###############################################################################################################
 ######                                          Add Functions                                            ######
 ###############################################################################################################
-function Add-MDMApplication() {
-
-    <#
-        .SYNOPSIS
-        This function is used to add an MDM application using the Graph API REST interface
-        .DESCRIPTION
-        The function connects to the Graph API Interface and adds an MDM application from the itunes store
-        .EXAMPLE
-        Add-MDMApplication -JSON $JSON
-        Adds an application into Intune
-        .NOTES
-        NAME: Add-MDMApplication
-        #>
-        
-    [cmdletbinding()]
-        
-    param
-    (
-        $JSON
-    )
-        
-    try {
-        
-        if (!$JSON) {
-        
-            Write-Error "No JSON was passed to the function, provide a JSON variable"
-            break
-        
-        }
-        
-        Test-JSON -JSON $JSON
-
-        New-MgDeviceAppMgtMobileApp -BodyParameter $JSON        
-    }
-        
-    catch {
-        
-        $ex = $_.Exception
-        $errorResponse = $ex.Response.GetResponseStream()
-        $reader = New-Object System.IO.StreamReader($errorResponse)
-        $reader.BaseStream.Position = 0
-        $reader.DiscardBufferedData()
-        $responseBody = $reader.ReadToEnd()
-        Write-Debug "Response content:`n$responseBody"
-        Write-Error "Request to $Uri failed with HTTP Status $($ex.Response.StatusCode) $($ex.Response.StatusDescription)"
-
-        break
-        
-    }
-        
-}
-        
+       
 ####################################################
         
-Function Add-ApplicationAssignment() {
-        
+function getallpagination () {
     <#
-        .SYNOPSIS
-        This function is used to add an application assignment using the Graph API REST interface
-        .DESCRIPTION
-        The function connects to the Graph API Interface and adds a application assignment
-        .EXAMPLE
-        Add-ApplicationAssignment -ApplicationId $ApplicationId -TargetGroupId $TargetGroupId -InstallIntent $InstallIntent
-        Adds an application assignment in Intune
-        .NOTES
-        NAME: Add-ApplicationAssignment
-        #>
-        
-    [cmdletbinding()]
-        
-    param
-    (
-        $ApplicationId,
-        $TargetGroupId,
-        $InstallIntent
-    )
-            
-    try {
-        
-        if (!$ApplicationId) {
-        
-            Write-Error "No Application Id specified, specify a valid Application Id"
-            break
-        
-        }
-        
-        if (!$TargetGroupId) {
-        
-            Write-Error "No Target Group Id specified, specify a valid Target Group Id"
-            break
-        
-        }
-        
-                
-        if (!$InstallIntent) {
-        
-            Write-Error "No Install Intent specified, specify a valid Install Intent - available, notApplicable, required, uninstall, availableWithoutEnrollment"
-            break
-        
-        }
-        
-        $JSON = @"
-        {
-            "mobileAppAssignments": [
-            {
-                "@odata.type": "#microsoft.graph.mobileAppAssignment",
-                "target": {
-                "@odata.type": "#microsoft.graph.groupAssignmentTarget",
-                "groupId": "$TargetGroupId"
-                },
-                "intent": "$InstallIntent"
-            }
-            ]
-        }
-"@
-        New-MgDeviceAppMgtMobileAppAssignment -BodyParameter $JSON
-        
+.SYNOPSIS
+This function is used to grab all items from Graph API that are paginated
+.DESCRIPTION
+The function connects to the Graph API Interface and gets all items from the API that are paginated
+.EXAMPLE
+getallpagination -url "https://graph.microsoft.com/v1.0/groups"
+ Returns all items
+.NOTES
+ NAME: getallpagination
+#>
+[cmdletbinding()]
+    
+param
+(
+    $url
+)
+    $response = (Invoke-MgGraphRequest -uri $url -Method Get -OutputType PSObject)
+    $alloutput = $response.value
+    
+    $alloutputNextLink = $response."@odata.nextLink"
+    
+    while ($null -ne $alloutputNextLink) {
+        $alloutputResponse = (Invoke-MGGraphRequest -Uri $alloutputNextLink -Method Get -outputType PSObject)
+        $alloutputNextLink = $alloutputResponse."@odata.nextLink"
+        $alloutput += $alloutputResponse.value
     }
-            
-    catch {
-        
-        $ex = $_.Exception
-        $errorResponse = $ex.Response.GetResponseStream()
-        $reader = New-Object System.IO.StreamReader($errorResponse)
-        $reader.BaseStream.Position = 0
-        $reader.DiscardBufferedData()
-        $responseBody = $reader.ReadToEnd()
-        Write-Debug "Response content:`n$responseBody"
-        Write-Error "Request to $Uri failed with HTTP Status $($ex.Response.StatusCode) $($ex.Response.StatusDescription)"
-        break
-        
+    
+    return $alloutput
     }
-        
-}
-        
         
 function CloneObject($object) {
         
@@ -1251,7 +1151,8 @@ function Invoke-UploadWin32Lob() {
         }
         
         Write-Verbose "Creating application in Intune..."
-        $mobileApp = New-MgDeviceAppMgtMobileApp -BodyParameter ($mobileAppBody | ConvertTo-Json)
+        $mobileApp = Invoke-MgGraphRequest -Method POST -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/" -Body ($mobileAppBody | ConvertTo-Json) -ContentType "application/json" -OutputType PSObject
+        #$mobileApp = New-MgDeviceAppMgtMobileApp -BodyParameter ($mobileAppBody | ConvertTo-Json)
         
         # Get the content version for the new app (this will always be 1 until the new app is committed).
         Write-Verbose "Creating Content Version in the service for the application..."
@@ -1351,7 +1252,7 @@ Function Get-IntuneApplication() {
         #>            
     try {
 
-        return Get-MgDeviceAppMgtMobileApp -All | Where-Object { (!($_.AdditionalProperties['@odata.type']).Contains("managed")) }
+        return getallpagination -url "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/"
         
     }
             
