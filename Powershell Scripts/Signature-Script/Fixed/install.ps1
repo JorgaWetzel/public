@@ -46,10 +46,10 @@ $SignatureVersion = "1" #Change this if you have updated the signature. If you d
 $ForceSignature = '0' #Set to 1 if you don't want the users to be able to change signature in Outlook
 $Address =      ""
 $Tel =          ""
-$TenantId     = "c77ac78f-946a-4a81-bb8a-94e6a56b0b0d"
-$ClientId     = "6d355681-f1fe-4156-bd0f-94e843f0f6d4"
-$thumb        = "1F474441752CC5F232044E9AACAADD3FF70DE959"
-$pwd          = "SuperS3cur3P@ssw0rd"
+$TenantId     = ""
+$ClientId     = ""
+$thumb        = ""
+$pwd          = ""
 
 
 #################################################### DO NOT EDIT BELOW THIS LINE ####################################################
