@@ -1,5 +1,5 @@
 #What is your Tenant URL
-$turl = "https://myurl.com"
+$turl = "kgstaefahomb-admin.sharepoint.com"
 
 # Login to Azure AD PowerShell With Admin Account
 Connect-AzureAD 

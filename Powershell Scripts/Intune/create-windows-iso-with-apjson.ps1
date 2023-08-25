@@ -439,7 +439,7 @@ Invoke-WebRequest -Uri $fidourl -OutFile $fidopath -UseBasicParsing
 write-host "Fido Downloaded"
 ##Run Fido
 # Set the parameters
-$Locale = "en-US"
+$Locale = "de-CH"
 $Win = $selectedos.Major
 $Rel = $selectedos.Minor
 $Ed = "Pro"
