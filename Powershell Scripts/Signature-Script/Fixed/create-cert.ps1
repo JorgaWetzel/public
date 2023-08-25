@@ -1,5 +1,5 @@
 #What is your Tenant URL
-$turl = "kgstaefahomb-admin.sharepoint.com"
+$turl = "customer.sharepoint.com"
 
 # Login to Azure AD PowerShell With Admin Account
 Connect-AzureAD 
@@ -8,7 +8,7 @@ Connect-AzureAD
 $currentDate = Get-Date
 $endDate = $currentDate.AddYears(1)
 $notAfter = $endDate.AddYears(1)
-$pwd = "SuperS3cur3P@ssw0rd"
+$pwd = "P@ssw0rd"
 $domain = $turl
 $thumb = (New-SelfSignedCertificate -CertStoreLocation cert:\localmachine\my -DnsName $turl -KeyExportPolicy Exportable -Provider "Microsoft Enhanced RSA and AES Cryptographic Provider" -NotAfter $notAfter).Thumbprint
 $pwd = ConvertTo-SecureString -String $pwd -Force -AsPlainText
