@@ -43,17 +43,17 @@ Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 $AutopilotMenu             = New-Object system.Windows.Forms.Form
-$AutopilotMenu.ClientSize  = New-Object System.Drawing.Point(396,431)
-$AutopilotMenu.text        = "oneICT Autopilot Tools"
+$AutopilotMenu.ClientSize  = New-Object System.Drawing.Point(396,500)
+$AutopilotMenu.text        = "Autopilot Tools"
 $AutopilotMenu.TopMost     = $false
 $AutopilotMenu.BackColor   = [System.Drawing.ColorTranslator]::FromHtml("#ffffff")
 
 $Label1                          = New-Object system.Windows.Forms.Label
-$Label1.text                     = "Troubleshooting Tools für Intune Autopilot"
+$Label1.text                     = "Powered bei JJW oneICT AG"
 $Label1.AutoSize                 = $true
 $Label1.width                    = 25
 $Label1.height                   = 10
-$Label1.location                 = New-Object System.Drawing.Point(7,396)
+$Label1.location                 = New-Object System.Drawing.Point(7,480)
 $Label1.Font                     = New-Object System.Drawing.Font('Microsoft Sans Serif',8)
 
 $eventvwr                       = New-Object system.Windows.Forms.Button
@@ -98,11 +98,27 @@ $log2.height                   = 56
 $log2.location                 = New-Object System.Drawing.Point(222,245)
 $log2.Font                     = New-Object System.Drawing.Font('Microsoft Sans Serif',12)
 
+# Neuer Button für IntuneManagementExtensionDiagnostics
+$IntuneManagementExtensionDiagnostics = New-Object system.Windows.Forms.Button
+$IntuneManagementExtensionDiagnostics.text = "IntuneManagementExtensionDiagnostics"
+$IntuneManagementExtensionDiagnostics.width = 157
+$IntuneManagementExtensionDiagnostics.height = 56
+$IntuneManagementExtensionDiagnostics.location = New-Object System.Drawing.Point(21,360)
+$IntuneManagementExtensionDiagnostics.Font = New-Object System.Drawing.Font('Microsoft Sans Serif',12)
 
+# Aktion für den neuen Button definieren
+$IntuneManagementExtensionDiagnostics.Add_Click({
+    Start-Process -FilePath "powershell.exe" -ArgumentList '-nologo -noprofile -executionpolicy bypass -command {
+        cd C:\ProgramData;
+        Set-ExecutionPolicy bypass -Scope Process;
+        Save-Script Get-IntuneManagementExtensionDiagnostics -Path ./;
+        ./Get-IntuneManagementExtensionDiagnostics.ps1;
+        ./Get-IntuneManagementExtensionDiagnostics.ps1 -Online;
+    }' -Wait
+})
 
-
-
-$AutopilotMenu.controls.AddRange(@($Label1,$scriptrun,$eventvwr,$regedit,$explorer,$log1, $log2))
+# Hinzufügen der Buttons zum Formular, inklusive des neuen Buttons
+$AutopilotMenu.controls.AddRange(@($Label1,$scriptrun,$eventvwr,$regedit,$explorer,$log1, $log2, $IntuneManagementExtensionDiagnostics))
 
 
 ##Launch Autopilot Diagnostics in new window (don't autoclose)
@@ -138,7 +154,6 @@ $log2.Add_Click({
 
 
 [void]$AutopilotMenu.ShowDialog()
-
 
 ## Install-Module IntuneStuff -Force
 #Install-Module IntuneStuff -Force
