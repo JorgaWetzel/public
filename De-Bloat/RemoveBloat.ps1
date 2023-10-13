@@ -17,7 +17,7 @@
 .OUTPUTS
 C:\ProgramData\Debloat\Debloat.log
 .NOTES
-  Version:        3.0.2
+  Version:        4.0.4
   Author:         Andrew Taylor
   Twitter:        @AndrewTaylor_2
   WWW:            andrewstaylor.com
@@ -48,6 +48,12 @@ C:\ProgramData\Debloat\Debloat.log
   Change 30/05/2023 - Logic to check if gamepresencewriter exists before running Set-ACL to stop errors on re-run
   Change 25/07/2023 - Added Lenovo apps (Thanks to Simon Lilly and Philip Jorgensen)
   Change 31/07/2023 - Added LenovoAssist
+  Change 21/09/2023 - Remove Windows backup for Win10
+  Change 28/09/2023 - Enabled Diagnostic Tracking for Endpoint Analytics
+  Change 02/10/2023 - Lenovo Fix
+  Change 06/10/2023 - Teams chat fix
+  Change 09/10/2023 - Dell Command Update change
+  Change 11/10/2023 - Grab all uninstall strings and use native uninstaller instead of uninstall-package
 .EXAMPLE
 N/A
 #>
@@ -718,10 +724,10 @@ else {
 #                                             Disable Services                                             #
 #                                                                                                          #
 ############################################################################################################
-    Write-Host "Stopping and disabling Diagnostics Tracking Service"
+    ##Write-Host "Stopping and disabling Diagnostics Tracking Service"
     #Disabling the Diagnostics Tracking Service
-    Stop-Service "DiagTrack"
-    Set-Service "DiagTrack" -StartupType Disabled
+    ##Stop-Service "DiagTrack"
+    ##Set-Service "DiagTrack" -StartupType Disabled
 
 
 ############################################################################################################
@@ -756,12 +762,12 @@ $WinPackage = Get-AppxPackage -allusers | Where-Object {$_.Name -eq $MSTeams}
 $ProvisionedPackage = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $WinPackage }
 If ($null -ne $WinPackage) 
 {
-    Remove-AppxPackage  -Package $WinPackage.PackageFullName
+    Remove-AppxPackage  -Package $WinPackage.PackageFullName -AllUsers
 } 
 
 If ($null -ne $ProvisionedPackage) 
 {
-    Remove-AppxProvisionedPackage -online -Packagename $ProvisionedPackage.Packagename
+    Remove-AppxProvisionedPackage -online -Packagename $ProvisionedPackage.Packagename -AllUsers
 }
 
 ##Tweak reg permissions
@@ -785,8 +791,19 @@ If (!(Test-Path $registryPath)) {
 }
 Set-ItemProperty $registryPath "ChatIcon" -Value 3
 write-host "Removed Teams Chat"
-
-
+############################################################################################################
+#                                           Windows Backup App                                             #
+#                                                                                                          #
+############################################################################################################
+$version = Get-WMIObject win32_operatingsystem | Select-Object Caption
+if ($version.Caption -like "*Windows 10*") {
+    write-host "Removing Windows Backup"
+    $filepath = "C:\Windows\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\WindowsBackup\Assets"
+if (Test-Path $filepath) {
+Remove-WindowsPackage -Online -PackageName "Microsoft-Windows-UserExperience-Desktop-Package~31bf3856ad364e35~amd64~~10.0.19041.3393"
+}
+write-host "Removed"
+}
 
 ############################################################################################################
 #                                             Clear Start Menu                                             #
@@ -906,6 +923,143 @@ If (!(Test-Path $surf)) {
 }
 New-ItemProperty -Path $surf -Name 'AllowSurfGame' -Value 0 -PropertyType DWord
 
+############################################################################################################
+#                                       Grab all Uninstall Strings                                         #
+#                                                                                                          #
+############################################################################################################
+
+
+write-host "Checking 32-bit System Registry"
+##Search for 32-bit versions and list them
+$allstring = @()
+$path1 =  "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+#Loop Through the apps if name has Adobe and NOT reader
+$32apps = Get-ChildItem -Path $path1 | Get-ItemProperty | Select-Object -Property DisplayName, UninstallString
+
+foreach ($32app in $32apps) {
+#Get uninstall string
+$string1 =  $32app.uninstallstring
+#Check if it's an MSI install
+if ($string1 -match "^msiexec*") {
+#MSI install, replace the I with an X and make it quiet
+$string2 = $string1 + " /quiet /norestart"
+$string2 = $string2 -replace "/I", "/X "
+#Create custom object with name and string
+$allstring += New-Object -TypeName PSObject -Property @{
+    Name = $32app.DisplayName
+    String = $string2
+}
+}
+else {
+#Exe installer, run straight path
+$string2 = $string1
+$allstring += New-Object -TypeName PSObject -Property @{
+    Name = $32app.DisplayName
+    String = $string2
+}
+}
+
+}
+write-host "32-bit check complete"
+write-host "Checking 64-bit System registry"
+##Search for 64-bit versions and list them
+
+$path2 =  "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+#Loop Through the apps if name has Adobe and NOT reader
+$64apps = Get-ChildItem -Path $path2 | Get-ItemProperty | Select-Object -Property DisplayName, UninstallString
+
+foreach ($64app in $64apps) {
+#Get uninstall string
+$string1 =  $64app.uninstallstring
+#Check if it's an MSI install
+if ($string1 -match "^msiexec*") {
+#MSI install, replace the I with an X and make it quiet
+$string2 = $string1 + " /quiet /norestart"
+$string2 = $string2 -replace "/I", "/X "
+#Uninstall with string2 params
+$allstring += New-Object -TypeName PSObject -Property @{
+    Name = $64app.DisplayName
+    String = $string2
+}
+}
+else {
+#Exe installer, run straight path
+$string2 = $string1
+$allstring += New-Object -TypeName PSObject -Property @{
+    Name = $64app.DisplayName
+    String = $string2
+}
+}
+
+}
+
+write-host "64-bit checks complete"
+
+##USER
+write-host "Checking 32-bit User Registry"
+##Search for 32-bit versions and list them
+$path1 =  "HKCU:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+##Check if path exists
+if (Test-Path $path1) {
+#Loop Through the apps if name has Adobe and NOT reader
+$32apps = Get-ChildItem -Path $path1 | Get-ItemProperty | Select-Object -Property DisplayName, UninstallString
+
+foreach ($32app in $32apps) {
+#Get uninstall string
+$string1 =  $32app.uninstallstring
+#Check if it's an MSI install
+if ($string1 -match "^msiexec*") {
+#MSI install, replace the I with an X and make it quiet
+$string2 = $string1 + " /quiet /norestart"
+$string2 = $string2 -replace "/I", "/X "
+#Create custom object with name and string
+$allstring += New-Object -TypeName PSObject -Property @{
+    Name = $32app.DisplayName
+    String = $string2
+}
+}
+else {
+#Exe installer, run straight path
+$string2 = $string1
+$allstring += New-Object -TypeName PSObject -Property @{
+    Name = $32app.DisplayName
+    String = $string2
+}
+}
+}
+}
+write-host "32-bit check complete"
+write-host "Checking 64-bit Use registry"
+##Search for 64-bit versions and list them
+
+$path2 =  "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+#Loop Through the apps if name has Adobe and NOT reader
+$64apps = Get-ChildItem -Path $path2 | Get-ItemProperty | Select-Object -Property DisplayName, UninstallString
+
+foreach ($64app in $64apps) {
+#Get uninstall string
+$string1 =  $64app.uninstallstring
+#Check if it's an MSI install
+if ($string1 -match "^msiexec*") {
+#MSI install, replace the I with an X and make it quiet
+$string2 = $string1 + " /quiet /norestart"
+$string2 = $string2 -replace "/I", "/X "
+#Uninstall with string2 params
+$allstring += New-Object -TypeName PSObject -Property @{
+    Name = $64app.DisplayName
+    String = $string2
+}
+}
+else {
+#Exe installer, run straight path
+$string2 = $string1
+$allstring += New-Object -TypeName PSObject -Property @{
+    Name = $64app.DisplayName
+    String = $string2
+}
+}
+
+}
 
 ############################################################################################################
 #                                        Remove Manufacturer Bloat                                         #
@@ -940,7 +1094,6 @@ $UninstallPrograms = @(
     "RealtekSemiconductorCorp.HPAudioControl",
     "HP Sure Recover",
     "HP Sure Run Module"
-
 )
 
 $HPidentifier = "AD2F1837"
@@ -949,7 +1102,7 @@ $InstalledPackages = Get-AppxPackage -AllUsers | Where-Object {($UninstallPackag
 
 $ProvisionedPackages = Get-AppxProvisionedPackage -Online | Where-Object {($UninstallPackages -contains $_.DisplayName) -or ($_.DisplayName -match "^$HPidentifier")}
 
-$InstalledPrograms = Get-Package | Where-Object {$UninstallPrograms -contains $_.Name}
+$InstalledPrograms = $allstring | Where-Object {$UninstallPrograms -contains $_.Name}
 
 # Remove provisioned packages first
 ForEach ($ProvPackage in $ProvisionedPackages) {
@@ -979,9 +1132,22 @@ ForEach ($AppxPackage in $InstalledPackages) {
 $InstalledPrograms | ForEach-Object {
 
     Write-Host -Object "Attempting to uninstall: [$($_.Name)]..."
+    $uninstallcommand = $_.String
 
     Try {
-        $Null = $_ | Uninstall-Package -AllVersions -Force -ErrorAction Stop
+        if ($uninstallcommand -match "^msiexec*") {
+            #Remove msiexec as we need to split for the uninstall
+            $uninstallcommand = $uninstallcommand -replace "msiexec.exe", ""
+            #Uninstall with string2 params
+            Start-Process 'msiexec.exe' -ArgumentList $uninstallcommand -NoNewWindow -Wait
+            }
+            else {
+            #Exe installer, run straight path
+            $string2 = $uninstallcommand
+            start-process $string2
+            }
+        #$A = Start-Process -FilePath $uninstallcommand -Wait -passthru -NoNewWindow;$a.ExitCode
+        #$Null = $_ | Uninstall-Package -AllVersions -Force -ErrorAction Stop
         Write-Host -Object "Successfully uninstalled: [$($_.Name)]"
     }
     Catch {Write-Warning -Message "Failed to uninstall: [$($_.Name)]"}
@@ -1030,6 +1196,9 @@ $UninstallPrograms = @(
     "DellInc.PartnerPromo"
     "DellInc.DellOptimizer"
     "DellInc.DellCommandUpdate"
+    "Dell Command | Update for Windows"
+    "Dell Digital Delivery"
+    "Dell SupportAssist Remediation"
 )
 
 $WhitelistedApps = @(
@@ -1042,7 +1211,7 @@ $InstalledPackages = Get-AppxPackage -AllUsers | Where-Object {(($_.Name -in $Un
 
 $ProvisionedPackages = Get-AppxProvisionedPackage -Online | Where-Object {(($_.Name -in $UninstallPrograms) -or ($_.Name -like "*Dell*")) -and ($_.Name -NotMatch $WhitelistedApps)}
 
-$InstalledPrograms = Get-Package | Where-Object {(($_.Name -in $UninstallPrograms) -or ($_.Name -like "*Dell*")) -and ($_.Name -NotMatch $WhitelistedApps)}
+$InstalledPrograms = $allstring | Where-Object {(($_.Name -in $UninstallPrograms) -or ($_.Name -like "*Dell*")) -and ($_.Name -NotMatch $WhitelistedApps)}
 # Remove provisioned packages first
 ForEach ($ProvPackage in $ProvisionedPackages) {
 
@@ -1084,14 +1253,50 @@ ForEach ($AppxPackage in $InstalledPackages) {
 $InstalledPrograms | ForEach-Object {
 
     Write-Host -Object "Attempting to uninstall: [$($_.Name)]..."
+    $uninstallcommand = $_.String
 
     Try {
-        $Null = $_ | Uninstall-Package -AllVersions -Force -ErrorAction Stop
+        if ($uninstallcommand -match "^msiexec*") {
+            #Remove msiexec as we need to split for the uninstall
+            $uninstallcommand = $uninstallcommand -replace "msiexec.exe", ""
+            #Uninstall with string2 params
+            Start-Process 'msiexec.exe' -ArgumentList $uninstallcommand -NoNewWindow -Wait
+            }
+            else {
+            #Exe installer, run straight path
+            $string2 = $uninstallcommand
+            start-process $string2
+            }
+        #$A = Start-Process -FilePath $uninstallcommand -Wait -passthru -NoNewWindow;$a.ExitCode        
+        #$Null = $_ | Uninstall-Package -AllVersions -Force -ErrorAction Stop
         Write-Host -Object "Successfully uninstalled: [$($_.Name)]"
     }
     Catch {Write-Warning -Message "Failed to uninstall: [$($_.Name)]"}
 }
 
+##Remove Support Assist Remediation
+write-host "Removing Support Assist Remediation"
+$filename = "c:\windows\installer\c33f.msi"
+##Check if msi exists
+if (Test-Path $filename) {
+$path = $filename
+
+$comObjWI = New-Object -ComObject WindowsInstaller.Installer
+$MSIDatabase = $comObjWI.GetType().InvokeMember("OpenDatabase","InvokeMethod",$Null,$comObjWI,@($Path,0))
+$Query = "SELECT Value FROM Property WHERE Property = 'ProductCode'"
+$View = $MSIDatabase.GetType().InvokeMember("OpenView","InvokeMethod",$null,$MSIDatabase,($Query))
+$View.GetType().InvokeMember("Execute", "InvokeMethod", $null, $View, $null)
+$Record = $View.GetType().InvokeMember("Fetch","InvokeMethod",$null,$View,$null)
+$Value = $Record.GetType().InvokeMember("StringData","GetProperty",$null,$Record,1)
+
+
+write-host "Your MSI code is $Value" -ForegroundColor Green
+
+Start-Process -FilePath $filepath -ArgumentList $params -Wait
+$uninstallcommand = "/x $value /qn"
+Start-Process 'msiexec.exe' -ArgumentList $uninstallcommand -NoNewWindow -Wait
+}
+write-host "Removed Support Assist Remediation"
 }
 
 
@@ -1162,7 +1367,7 @@ if ($manufacturer -like "Lenovo") {
     
     $ProvisionedPackages = Get-AppxProvisionedPackage -Online | Where-Object {(($_.Name -in $UninstallPrograms))}
     
-    $InstalledPrograms = Get-Package | Where-Object {(($_.Name -in $UninstallPrograms))}
+    $InstalledPrograms = $allstring | Where-Object {(($_.Name -in $UninstallPrograms))}
     # Remove provisioned packages first
     ForEach ($ProvPackage in $ProvisionedPackages) {
     
@@ -1200,17 +1405,30 @@ if ($manufacturer -like "Lenovo") {
     }
     
     
-    # Remove installed programs
-    $InstalledPrograms | ForEach-Object {
-    
-        Write-Host -Object "Attempting to uninstall: [$($_.Name)]..."
-    
-        Try {
-            $Null = $_ | Uninstall-Package -AllVersions -Force -ErrorAction Stop
-            Write-Host -Object "Successfully uninstalled: [$($_.Name)]"
-        }
-        Catch {Write-Warning -Message "Failed to uninstall: [$($_.Name)]"}
+# Remove installed programs
+$InstalledPrograms | ForEach-Object {
+
+    Write-Host -Object "Attempting to uninstall: [$($_.Name)]..."
+    $uninstallcommand = $_.String
+
+    Try {
+        if ($uninstallcommand -match "^msiexec*") {
+            #Remove msiexec as we need to split for the uninstall
+            $uninstallcommand = $uninstallcommand -replace "msiexec.exe", ""
+            #Uninstall with string2 params
+            Start-Process 'msiexec.exe' -ArgumentList $uninstallcommand -NoNewWindow -Wait
+            }
+            else {
+            #Exe installer, run straight path
+            $string2 = $uninstallcommand
+            start-process $string2
+            }
+        #$A = Start-Process -FilePath $uninstallcommand -Wait -passthru -NoNewWindow;$a.ExitCode
+        #$Null = $_ | Uninstall-Package -AllVersions -Force -ErrorAction Stop
+        Write-Host -Object "Successfully uninstalled: [$($_.Name)]"
     }
+    Catch {Write-Warning -Message "Failed to uninstall: [$($_.Name)]"}
+}
 
     # Get Lenovo Vantage service uninstall string to uninstall service
     $lvs = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | Where-Object DisplayName -eq "Lenovo Vantage Service"
@@ -1227,23 +1445,40 @@ if ($manufacturer -like "Lenovo") {
     UninstallApp -appName "Ai Meeting Manager"
 
     # Uninstall ImController service
-    Invoke-Expression -Command 'cmd.exe /c "c:\windows\system32\ImController.InfInstaller.exe" -uninstall'
+    ##Check if exists
+    $path = "c:\windows\system32\ImController.InfInstaller.exe"
+    if (Test-Path $path) {
+        Write-Host "ImController.InfInstaller.exe exists"
+        $uninstall = "cmd /c " + $path + " -uninstall"
+        Write-Host $uninstall
+        Invoke-Expression $uninstall
+    }
+    else {
+        Write-Host "ImController.InfInstaller.exe does not exist"
+    }
+    ##Invoke-Expression -Command 'cmd.exe /c "c:\windows\system32\ImController.InfInstaller.exe" -uninstall'
 
     # Remove vantage associated registry keys
     Remove-Item 'HKLM:\SOFTWARE\Policies\Lenovo\E046963F.LenovoCompanion_k1h2ywk1493x8' -Recurse -ErrorAction SilentlyContinue
     Remove-Item 'HKLM:\SOFTWARE\Policies\Lenovo\ImController' -Recurse -ErrorAction SilentlyContinue
     Remove-Item 'HKLM:\SOFTWARE\Policies\Lenovo\Lenovo Vantage' -Recurse -ErrorAction SilentlyContinue
-    Remove-Item 'HKLM:\SOFTWARE\Policies\Lenovo\Commercial Vantage' -Recurse -ErrorAction SilentlyContinue
+    #Remove-Item 'HKLM:\SOFTWARE\Policies\Lenovo\Commercial Vantage' -Recurse -ErrorAction SilentlyContinue
 
      # Uninstall AI Meeting Manager Service
-     Invoke-Expression -Command 'cmd.exe /c "C:\Program Files\Lenovo\Ai Meeting Manager Service\unins000.exe" /SILENT'
+     $path = 'C:\Program Files\Lenovo\Ai Meeting Manager Service\unins000.exe'
+     $params = "/SILENT"
+     
+     Start-Process -FilePath $path -ArgumentList $params -Wait
 
     # Uninstall Lenovo Vantage
-    Invoke-Expression -Command 'cmd.exe /c "C:\Program Files (x86)\Lenovo\VantageService\3.13.43.0\Uninstall.exe" /SILENT'
+    $path = 'C:\Program Files (x86)\Lenovo\VantageService\3.13.43.0\Uninstall.exe'
+    $params = '/SILENT'
+        Start-Process -FilePath $path -ArgumentList $params -Wait
 
     ##Uninstall Smart Appearance
-    Invoke-Expression -Command 'cmd.exe /c "C:\Program Files\Lenovo\Lenovo Smart Appearance Components\unins000.exe" /SILENT'
-
+    $path = 'C:\Program Files\Lenovo\Lenovo Smart Appearance Components\unins000.exe'
+    $params = '/SILENT'
+        Start-Process -FilePath $path -ArgumentList $params -Wait
 
 
     # Remove Lenovo Now
