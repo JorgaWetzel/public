@@ -108,14 +108,10 @@ $IntuneManagementExtensionDiagnostics.Font = New-Object System.Drawing.Font('Mic
 
 # Aktion für den neuen Button definieren
 $IntuneManagementExtensionDiagnostics.Add_Click({
-    Start-Process -FilePath "powershell.exe" -ArgumentList '-nologo -noprofile -executionpolicy bypass -command {
-        cd C:\ProgramData;
-        Set-ExecutionPolicy bypass -Scope Process;
-        Save-Script Get-IntuneManagementExtensionDiagnostics -Path ./;
-        ./Get-IntuneManagementExtensionDiagnostics.ps1;
-        ./Get-IntuneManagementExtensionDiagnostics.ps1 -Online;
-    }' -Wait
+    start-process powershell.exe -argument "-nologo -noprofile -noexit -executionpolicy bypass -command cd C:\ProgramData; Set-ExecutionPolicy bypass -Scope Process; Save-Script Get-IntuneManagementExtensionDiagnostics -Path ./; ./Get-IntuneManagementExtensionDiagnostics.ps1 -Online;"
 })
+
+
 
 # Hinzufügen der Buttons zum Formular, inklusive des neuen Buttons
 $AutopilotMenu.controls.AddRange(@($Label1,$scriptrun,$eventvwr,$regedit,$explorer,$log1, $log2, $IntuneManagementExtensionDiagnostics))

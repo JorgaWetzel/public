@@ -1,5 +1,5 @@
 <#PSScriptInfo
-.VERSION 1.0.4
+.VERSION 3.0.0
 .GUID 26fabcfd-1773-409e-a952-a8f94fbe660b
 .AUTHOR AndrewTaylor
 .DESCRIPTION Creates a Windows 10/11 ISO using the latest download and auto-injects Autopilot JSON
@@ -16,7 +16,7 @@
 #>
 <#
 .SYNOPSIS
-  Creates a Windows 10/11 ISO using the latest download and auto-injects Autopilot JSON
+Creates a Windows 10/11 ISO using the latest download and auto-injects Autopilot JSON
 .DESCRIPTION
 .Downloads latest windows ISO
 .Grabs Autopilot Profile
@@ -28,16 +28,20 @@ Profile and Windows OS (from Gridview)
 .OUTPUTS
 In-Line Outputs
 .NOTES
-  Version:        1.0.4
+  Version:        3.0.1
   Author:         Andrew Taylor
   Twitter:        @AndrewTaylor_2
   WWW:            andrewstaylor.com
   Creation Date:  27/06/2023
-  Last Modified:  15/08/2023
+  Last Modified:  02/10/2023
   Purpose/Change: Initial script development
   Change: Amended to grab latest supported versions
   Change: Now uses Fido (https://github.com/pbatard/Fido) to grab ISO URL
   Change: Added Organization.Read.All to scopes
+  Change: Added support for multiple languages
+  Change: Languages fix
+  Change: Added support to select version
+  Change: JSON update
 .EXAMPLE
 N/A
 #>
@@ -159,9 +163,9 @@ $oobeSettings = $approfile.outOfBoxExperienceSettings
 
 # Build up properties
 $json = @{}
-$json.Add("Comment_File", "Profile $($_.displayName)")
+$json.Add("Comment_File", "Profile $($approfile.displayName)")
 $json.Add("Version", 2049)
-$json.Add("ZtdCorrelationId", $_.id)
+$json.Add("ZtdCorrelationId", $approfile.id)
 if ($approfile."@odata.type" -eq "#microsoft.graph.activeDirectoryWindowsAutopilotDeploymentProfile") {
     $json.Add("CloudAssignedDomainJoinMethod", 1)
 }
@@ -169,7 +173,7 @@ else {
     $json.Add("CloudAssignedDomainJoinMethod", 0)
 }
 if ($approfile.deviceNameTemplate) {
-    $json.Add("CloudAssignedDeviceName", $_.deviceNameTemplate)
+    $json.Add("CloudAssignedDeviceName", $approfile.deviceNameTemplate)
 }
 
 # Figure out config value
@@ -186,7 +190,7 @@ if ($oobeSettings.hideEULA -eq $true) {
 if ($oobeSettings.skipKeyboardSelectionPage -eq $true) {
     $oobeConfig += 1024
     if ($_.language) {
-        $json.Add("CloudAssignedLanguage", $_.language)
+        $json.Add("CloudAssignedLanguage", $approfile.language)
     }
 }
 if ($oobeSettings.deviceUsageType -eq 'shared') {
@@ -422,14 +426,77 @@ $object  = foreach($option in $options){new-object psobject -Property @{'Pick yo
 $osinput   = $object | Out-GridView -Title "Windows Selection" -PassThru
 $selectedname = $osinput.'Pick your Option'
 $selectedos = $allversions | Where-Object Name -eq "$selectedname"
-if ($selectedos.Major -eq 11) {
-    $imageindex = 6
-}
-if ($selectedos.Major -eq 10) {
-    $imageindex = 5
-}
 write-host "$selectedname Chosen"
 
+##Prompt for language
+write-output "Select a language"
+$url = "https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/available-language-packs-for-windows?view=windows-11"
+$content = (Invoke-WebRequest -Uri $url -UseBasicParsing).content
+
+# Use regex to extract the first table from the HTML content
+$tableRegex = '<table.*?>(.*?)</table>'
+$tableMatches = [regex]::Matches($content, $tableRegex, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+$firstTable = $tableMatches[0].Value
+$rowRegex = '<tr.*?>\s*<td.*?>.*?</td>\s*<td.*?>(.*?)</td>'
+$rowMatches = [regex]::Matches($firstTable, $rowRegex, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+$rowgroups = $rowMatches.Groups
+$languages = @()
+foreach ($row in $rowgroups) {
+    $secondColumnContent = [regex]::Match($row.Value, '<td.*?>(.*?)</td>\s*<td.*?>(.*?)</td>').Groups[2].Value
+    if ($secondColumnContent) {
+        if ($secondColumnContent -notlike "*<p>*") {
+    $languages += $secondColumnContent
+        }
+    }
+}
+
+$selectedlanguage = $languages | Out-GridView -Title "Select a Language" -PassThru
+
+write-host "$selectedlanguage Chosen"
+
+##Convert to text
+switch ($selectedlanguage) {
+    "ar-SA" { $Locale = "Arabic" }
+    "pt-BR" { $Locale = "Brazilian Portuguese" }
+    "bg-BG" { $Locale = "Bulgarian" }
+    "zh-CN" { $Locale = "Chinese (Simplified)" }
+    "zh-TW" { $Locale = "Chinese (Traditional)" }
+    "hr-HR" { $Locale = "Croatian" }
+    "cs-CZ" { $Locale = "Czech" }
+    "da-DK" { $Locale = "Danish" }
+    "nl-NL" { $Locale = "Dutch" }
+    "en-US" { $Locale = "English" }
+    "en-GB" { $Locale = "English International" }
+    "et-EE" { $Locale = "Estonian" }
+    "fi-FI" { $Locale = "Finnish" }
+    "fr-FR" { $Locale = "French" }
+    "fr-CA" { $Locale = "French Canadian" }
+    "de-DE" { $Locale = "German" }
+    "el-GR" { $Locale = "Greek" }
+    "he-IL" { $Locale = "Hebrew" }
+    "hu-HU" { $Locale = "Hungarian" }
+    "it-IT" { $Locale = "Italian" }
+    "ja-JP" { $Locale = "Japanese" }
+    "ko-KR" { $Locale = "Korean" }
+    "lv-LV" { $Locale = "Latvian" }
+    "lt-LT" { $Locale = "Lithuanian" }
+    "nb-NO" { $Locale = "Norwegian" }
+    "pl-PL" { $Locale = "Polish" }
+    "pt-PT" { $Locale = "Portuguese" }
+    "ro-RO" { $Locale = "Romanian" }
+    "ru-RU" { $Locale = "Russian" }
+    "sr-Latn-RS" { $Locale = "Serbian Latin" }
+    "sk-SK" { $Locale = "Slovak" }
+    "sl-SI" { $Locale = "Slovenian" }
+    "es-ES" { $Locale = "Spanish" }
+    "es-MX" { $Locale = "Spanish (Mexico)" }
+    "sv-SE" { $Locale = "Swedish" }
+    "th-TH" { $Locale = "Thai" }
+    "tr-TR" { $Locale = "Turkish" }
+    "uk-UA" { $Locale = "Ukrainian" }
+    default { $Locale = $selectedlanguage }
+}
 
 ##Download Fido
 write-host "Downloading Fido"
@@ -439,17 +506,17 @@ Invoke-WebRequest -Uri $fidourl -OutFile $fidopath -UseBasicParsing
 write-host "Fido Downloaded"
 ##Run Fido
 # Set the parameters
-$Locale = "de-CH"
 $Win = $selectedos.Major
 $Rel = $selectedos.Minor
 $Ed = "Pro"
 $GetUrl = $true
 write-host "Grabbing ISO URL"
 # Build the command string
-$Command = "$fidopath -Locale $Locale -Win $Win -Rel $Rel -Ed $Ed -GetUrl"
+$Command = "$fidopath -Lang '$Locale' -Win $Win -Rel $Rel -Ed $Ed -GetUrl"
 
 # Run the command and store the output in a variable
 $windowsuri = Invoke-Expression $Command
+
 
 # Display the output
 Write-Output $windowsuri
@@ -476,6 +543,25 @@ write-host "Drive Letter is $ISODrive"
 write-host "Copying ISO Contents"
 $copyisofules = Copy-Item -Path $isodrive":" -Destination $isocontents -Recurse
 write-host "Copying Complete"
+##Select Image
+write-host "Select Windows Version"
+$wimpath = $isodrive+":\sources\install.wim"
+$WinImages = Get-windowsimage -ImagePath $wimpath
+$Report = @()
+Foreach ($WinImage in $WinImages)
+{
+$curImage=Get-WindowsImage -ImagePath $wimpath -Index $WinImage.ImageIndex
+$objImage = [PSCustomObject]@{
+ImageIndex = $curImage.ImageIndex
+ImageName = $curImage.ImageName
+Version = $curImage.Version
+Languages=$curImage.Languages
+Architecture =$curImage.Architecture
+}
+$Report += $objImage
+}
+$imageselection = $Report | Out-GridView -PassThru
+$imageindex = $imageselection.ImageIndex
 ##Copy the WIM to mount
 write-host "Copying temporary WIM for manipulation"
 $copywim = copy-item $wimname $wimnametemp

@@ -1,2 +1,2 @@
 Set WshShell = CreateObject("WScript.Shell")
-WshShell.RUN "cmd /c c:\backup-restore\backup.bat", 0
+WshShell.RUN "cmd /c C:\Program Files\oneICT\EndpointManager\Data\backup-restore\backup.bat", 0
