@@ -17,7 +17,7 @@
 .OUTPUTS
 C:\ProgramData\Debloat\Debloat.log
 .NOTES
-  Version:        4.0.4
+  Version:        4.0.6
   Author:         Andrew Taylor
   Twitter:        @AndrewTaylor_2
   WWW:            andrewstaylor.com
@@ -54,7 +54,7 @@ C:\ProgramData\Debloat\Debloat.log
   Change 06/10/2023 - Teams chat fix
   Change 09/10/2023 - Dell Command Update change
   Change 11/10/2023 - Grab all uninstall strings and use native uninstaller instead of uninstall-package
-.EXAMPLE
+  Change 14/10/2023 - Updated HP Audio package name
 N/A
 #>
 
@@ -1094,6 +1094,7 @@ $UninstallPrograms = @(
     "RealtekSemiconductorCorp.HPAudioControl",
     "HP Sure Recover",
     "HP Sure Run Module"
+    "RealtekSemiconductorCorp.HPAudioControl_2.39.280.0_x64__dt26b99r8h8gj"
 )
 
 $HPidentifier = "AD2F1837"
@@ -1151,6 +1152,13 @@ $InstalledPrograms | ForEach-Object {
         Write-Host -Object "Successfully uninstalled: [$($_.Name)]"
     }
     Catch {Write-Warning -Message "Failed to uninstall: [$($_.Name)]"}
+
+
+}
+
+##Belt and braces, remove via CIM too
+foreach ($program in $UninstallPrograms) {
+Get-CimInstance -Classname Win32_Product | Where-Object Name -Match $program | Invoke-CimMethod -MethodName UnInstall
 }
 
 
@@ -1199,6 +1207,7 @@ $UninstallPrograms = @(
     "Dell Command | Update for Windows"
     "Dell Digital Delivery"
     "Dell SupportAssist Remediation"
+    "SupportAssist Recovery Assistant"
 )
 
 $WhitelistedApps = @(
@@ -1274,29 +1283,11 @@ $InstalledPrograms | ForEach-Object {
     Catch {Write-Warning -Message "Failed to uninstall: [$($_.Name)]"}
 }
 
-##Remove Support Assist Remediation
-write-host "Removing Support Assist Remediation"
-$filename = "c:\windows\installer\c33f.msi"
-##Check if msi exists
-if (Test-Path $filename) {
-$path = $filename
+##Belt and braces, remove via CIM too
+foreach ($program in $UninstallPrograms) {
+    Get-CimInstance -Classname Win32_Product | Where-Object Name -Match $program | Invoke-CimMethod -MethodName UnInstall
+    }
 
-$comObjWI = New-Object -ComObject WindowsInstaller.Installer
-$MSIDatabase = $comObjWI.GetType().InvokeMember("OpenDatabase","InvokeMethod",$Null,$comObjWI,@($Path,0))
-$Query = "SELECT Value FROM Property WHERE Property = 'ProductCode'"
-$View = $MSIDatabase.GetType().InvokeMember("OpenView","InvokeMethod",$null,$MSIDatabase,($Query))
-$View.GetType().InvokeMember("Execute", "InvokeMethod", $null, $View, $null)
-$Record = $View.GetType().InvokeMember("Fetch","InvokeMethod",$null,$View,$null)
-$Value = $Record.GetType().InvokeMember("StringData","GetProperty",$null,$Record,1)
-
-
-write-host "Your MSI code is $Value" -ForegroundColor Green
-
-Start-Process -FilePath $filepath -ArgumentList $params -Wait
-$uninstallcommand = "/x $value /qn"
-Start-Process 'msiexec.exe' -ArgumentList $uninstallcommand -NoNewWindow -Wait
-}
-write-host "Removed Support Assist Remediation"
 }
 
 
@@ -1429,6 +1420,11 @@ $InstalledPrograms | ForEach-Object {
     }
     Catch {Write-Warning -Message "Failed to uninstall: [$($_.Name)]"}
 }
+
+##Belt and braces, remove via CIM too
+foreach ($program in $UninstallPrograms) {
+    Get-CimInstance -Classname Win32_Product | Where-Object Name -Match $program | Invoke-CimMethod -MethodName UnInstall
+    }
 
     # Get Lenovo Vantage service uninstall string to uninstall service
     $lvs = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | Where-Object DisplayName -eq "Lenovo Vantage Service"
