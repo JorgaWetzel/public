@@ -1,146 +1,236 @@
-Write-Host "Installing Microsoft Graph modules if required (current user scope)"
+<#PSScriptInfo
+.VERSION 1.1
+.GUID fb5c2309-971c-4736-b7f3-2adcee3d3dff
+.AUTHOR AndrewTaylor
+.DESCRIPTION Creates a new Winget repo
+.COMPANYNAME 
+.COPYRIGHT GPL
+.TAGS intune endpoint MEM environment
+.LICENSEURI https://github.com/andrew-s-taylor/public/blob/main/LICENSE
+.PROJECTURI https://github.com/andrew-s-taylor/public
+.ICONURI 
+.EXTERNALMODULEDEPENDENCIES Az
+.REQUIREDSCRIPTS 
+.EXTERNALSCRIPTDEPENDENCIES 
+.RELEASENOTES
+#>
+<#
+.SYNOPSIS
+Creates a Winget Repository in Azure
+.DESCRIPTION
+Creates a Winget Repository in Azure
 
-#Install MS Graph if not available
-if (Get-Module -ListAvailable -Name Microsoft.Graph) {
-    Write-Host "Microsoft Graph Already Installed"
+.INPUTS
+Tenant ID, Subscription, Name, Region, Implementation Type
+.OUTPUTS
+Within Azure
+.NOTES
+  Version:        1.1
+  Author:         Andrew Taylor
+  Twitter:        @AndrewTaylor_2
+  WWW:            andrewstaylor.com
+  Creation Date:  09/11/2023
+  Purpose/Change: Initial script development
+ 
+.EXAMPLE
+N/A
+#>
+
+write-host "Creating folder to store files"
+#Create Folder
+$wingetfolder = $env:temp + "\winget"
+If (Test-Path $wingetfolder) {
+    Write-Output "$wingetfolder exists. Skipping."
+}
+Else {
+    Write-Output "The folder '$wingetfolder' doesn't exist. This folder will be used for storing logs created after the script runs. Creating now."
+    Start-Sleep 1
+    New-Item -Path "$wingetfolder" -ItemType Directory
+    Write-Output "The folder $wingetfolder was successfully created."
+}
+write-host "Folder created at $wingetfolder"
+$transcript = "$wingetfolder\wingetrepo.log"
+Start-Transcript -Path $transcript
+
+##Download the zip file from GitHub
+write-host "Downloading the zip file from GitHub"
+$downloadlink = "https://github.com/microsoft/winget-cli-restsource/releases/latest/download/WinGet.RestSource-Winget.PowerShell.Source.zip"
+$downloadlocation = "$wingetfolder\WinGet.RestSource-Winget.PowerShell.Source.zip"
+$download = Invoke-WebRequest -Uri $downloadlink -OutFile $downloadlocation
+write-host "Downloaded the zip file from GitHub"
+
+##Unzip the file
+write-host "Unzipping the file"
+$unziplocation = "$wingetfolder\WinGet.RestSource-Winget.PowerShell.Source"
+Expand-Archive -Path $downloadlocation -DestinationPath $unziplocation -Force
+write-host "Unzipped the file"
+
+##Unlock files within the folder
+write-host "Unlocking files within the folder"
+Get-ChildItem -Path $unziplocation -Recurse | Unblock-File
+write-host "Unlocked files within the folder"
+
+##Install AZ Module
+write-host "Installing AZ Module"
+if (Get-Module -ListAvailable -Name Az) {
+    Write-Host "AZ Module Already Installed"
 } 
 else {
     try {
-        Install-Module -Name Microsoft.Graph -Scope CurrentUser -Repository PSGallery -Force 
+        Install-Module -Name Az -Scope CurrentUser -Repository PSGallery -Force 
+        Write-Host "Az"
     }
     catch [Exception] {
         $_.message 
-        exit
     }
 }
 
+##Prompt for tenant ID
+$tenantid = Read-Host -Prompt "Enter the Tenant ID"
 
-# Load the Graph module
-Import-Module microsoft.graph
+##Connect to Azure
+write-host "Connecting to Azure"
+Connect-AzAccount -Tenant $tenantid
+write-host "Connected to Azure"
 
-####################################################################### END INSTALL MODULES #######################################################################
+##Prompt for subscription
+$subscriptionid = Read-Host -Prompt "Enter the Subscription ID"
 
-Function Connect-ToGraph {
-    <#
-.SYNOPSIS
-Authenticates to the Graph API via the Microsoft.Graph.Authentication module.
- 
-.DESCRIPTION
-The Connect-ToGraph cmdlet is a wrapper cmdlet that helps authenticate to the Intune Graph API using the Microsoft.Graph.Authentication module. It leverages an Azure AD app ID and app secret for authentication or user-based auth.
- 
-.PARAMETER Tenant
-Specifies the tenant (e.g. contoso.onmicrosoft.com) to which to authenticate.
- 
-.PARAMETER AppId
-Specifies the Azure AD app ID (GUID) for the application that will be used to authenticate.
- 
-.PARAMETER AppSecret
-Specifies the Azure AD app secret corresponding to the app ID that will be used to authenticate.
-
-.PARAMETER Scopes
-Specifies the user scopes for interactive authentication.
- 
-.EXAMPLE
-Connect-ToGraph -TenantId $tenantID -AppId $app -AppSecret $secret
- 
--#>
-    [cmdletbinding()]
-    param
-    (
-        [Parameter(Mandatory = $false)] [string]$Tenant,
-        [Parameter(Mandatory = $false)] [string]$AppId,
-        [Parameter(Mandatory = $false)] [string]$AppSecret,
-        [Parameter(Mandatory = $false)] [string]$scopes
-    )
-
-    Process {
-        Import-Module Microsoft.Graph.Authentication
-        $version = (get-module microsoft.graph.authentication | Select-Object -expandproperty Version).major
-
-        if ($AppId -ne "") {
-            $body = @{
-                grant_type    = "client_credentials";
-                client_id     = $AppId;
-                client_secret = $AppSecret;
-                scope         = "https://graph.microsoft.com/.default";
-            }
-     
-            $response = Invoke-RestMethod -Method Post -Uri https://login.microsoftonline.com/$Tenant/oauth2/v2.0/token -Body $body
-            $accessToken = $response.access_token
-     
-            $accessToken
-            if ($version -eq 2) {
-                write-host "Version 2 module detected"
-                $accesstokenfinal = ConvertTo-SecureString -String $accessToken -AsPlainText -Force
-            }
-            else {
-                write-host "Version 1 Module Detected"
-                Select-MgProfile -Name Beta
-                $accesstokenfinal = $accessToken
-            }
-            $graph = Connect-MgGraph  -AccessToken $accesstokenfinal 
-            Write-Host "Connected to Intune tenant $TenantId using app-based authentication (Azure AD authentication not supported)"
-        }
-        else {
-            if ($version -eq 2) {
-                write-host "Version 2 module detected"
-            }
-            else {
-                write-host "Version 1 Module Detected"
-                Select-MgProfile -Name Beta
-            }
-            $graph = Connect-MgGraph -scopes $scopes
-            Write-Host "Connected to Intune tenant $($graph.TenantId)"
-        }
-    }
-}    
-####################################################################### CREATE AAD OBJECTS #######################################################################
-#Connect to Graph
-Connect-ToGraph -Scopes "PrivilegedAccess.ReadWrite.AzureAD, PrivilegedAccess.ReadWrite.AzureADGroup, PrivilegedAccess.ReadWrite.AzureResources, RoleAssignmentSchedule.ReadWrite.Directory, Domain.Read.All, Domain.ReadWrite.All, Directory.Read.All, Policy.ReadWrite.ConditionalAccess, DeviceManagementApps.ReadWrite.All, DeviceManagementConfiguration.ReadWrite.All, DeviceManagementManagedDevices.ReadWrite.All, openid, profile, email, offline_access"
+##Set the subscription
+write-host "Setting the subscription"
+Set-AzContext -SubscriptionId $subscriptionid
+write-host "Set the subscription"
 
 
-#Get PIM role
-$uri = "https://graph.microsoft.com/v1.0/directoryRoles"
-$roles = (Invoke-MgGraphRequest -Uri $uri -Method Get -OutputType PSObject).value
-$PIMrole = $roles | where-object DisplayName -eq "Azure AD Joined Device Local Administrator"
+##Import the module
+write-host "Importing the module"
+Import-Module -Name $unziplocation\WinGet.RestSource-Winget.PowerShell.Source\Microsoft.WinGet.Source.psd1
+write-host "Imported the module"
+
+##Prompt for resource group
+$resourcegroup = Read-Host -Prompt "Enter the Resource Group Name"
+
+##Prompt for Winget Item Names
+$wingetitemname = Read-Host -Prompt "Enter the Winget Item Name"
+
+##Select Region from array of Azure regions
+$regions = @(
+    "eastus",
+    "eastus2",
+    "southcentralus",
+    "westus2",
+    "westus3",
+    "australiaeast",
+    "southeastasia",
+    "northeurope",
+    "swedencentral",
+    "uksouth",
+    "westeurope",
+    "centralus",
+    "southafricanorth",
+    "centralindia",
+    "eastasia",
+    "japaneast",
+    "koreacentral",
+    "canadacentral",
+    "francecentral",
+    "germanywestcentral",
+    "norwayeast",
+    "switzerlandnorth",
+    "uaenorth",
+    "brazilsouth",
+    "centraluseuap",
+    "eastus2euap",
+    "qatarcentral",
+    "centralusstage",
+    "eastusstage",
+    "eastus2stage",
+    "northcentralusstage",
+    "southcentralusstage",
+    "westusstage",
+    "westus2stage",
+    "asia",
+    "asiapacific",
+    "australia",
+    "brazil",
+    "canada",
+    "europe",
+    "france",
+    "germany",
+    "global",
+    "india",
+    "japan",
+    "korea",
+    "norway",
+    "singapore",
+    "southafrica",
+    "switzerland",
+    "uae",
+    "uk",
+    "unitedstates",
+    "unitedstateseuap",
+    "eastasiastage",
+    "southeastasiastage",
+    "brazilus",
+    "eastusstg",
+    "northcentralus",
+    "westus",
+    "jioindiawest",
+    "devfabric",
+    "westcentralus",
+    "southafricawest",
+    "australiacentral",
+    "australiacentral2",
+    "australiasoutheast",
+    "japanwest",
+    "jioindiacentral",
+    "koreasouth",
+    "southindia",
+    "westindia",
+    "canadaeast",
+    "francesouth",
+    "germanynorth",
+    "norwaywest",
+    "switzerlandwest",
+    "ukwest",
+    "uaecentral",
+    "brazilsoutheast"
+)
+
+$region = $regions | Out-GridView -Title "Select a region" -PassThru
+
+$installtype = Read-Host -Prompt "Enter the Install Type (Basic, Enhanced, Demo)"
+
+##Create the Winget Repo
+write-host "Creating the Winget Repo"
+new-wingetsource -Name $wingetitemname -ResourceGroup $resourcegroup -Region $region -ImplementationPerformance $installtype -ShowConnectionInstructions
+write-host "Created the Winget Repo"
+
+##Web app keeps failing so manually publish
+##Check if needed
+$webapptest = get-azwebapp -Name $wingetitemname
+
+##Check if empty
+if ($webapptest -eq $null) {
+    write-host "Web App doesn't exist"
+    $RestSourcePath = "$unziplocation\WinGet.RestSource-Winget.PowerShell.Source\Library\RestAPI\WinGet.RestSource.Functions.zip"
+$webapp = Publish-AzWebApp -ArchivePath $RestSourcePath -ResourceGroupName $resourcegroup -Name $wingetitemname -Force
+write-host "web app created"
+}
+else {
+    write-host "Web App exists"
+}
 
 
-## Create Conditional Access Policy
-$conditions = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessConditionSet
-
-## All Cloud Apps
-$conditions.Applications = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessApplicationCondition
-$conditions.Applications.IncludeApplications = "All"
- 
-##All users except the Azure AD admins role and group
-$conditions.Users = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessUserCondition
-$conditions.Users.IncludeUsers = "All"
-$conditions.Users.ExcludeRoles = $Pimrole.id
- 
-##All devices
-$conditions.ClientAppTypes = "All"
- 
-$controls = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessGrantControls
- 
-$controls._Operator = "OR"
-##Require device compliance
-$controls.BuiltInControls = "CompliantDevice"
-
-$name = "Conditional Access - Block NonCompliant Devices"
-
-##Disable initially just in case
-$state = "Disabled"
- 
-New-MgIdentityConditionalAccessPolicy `
-    -DisplayName $name `
-    -State $state `
-    -Conditions $conditions `
-    -GrantControls $controls
+##Get the URL
+$webappurl = (get-azwebapp -Name $wingetitemname).HostNames[0]
+write-host "Your Winget Repo is available at https://$webappurl/api"
+Stop-Transcript
 # SIG # Begin signature block
 # MIIoGQYJKoZIhvcNAQcCoIIoCjCCKAYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCB8kpYZLRYoi5Av
-# 4fHISVVTJQrW3xA0ZffIYSSza4b8U6CCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCM7GIS5RpWgvMu
+# j6DbKj0Zg0iCTndKRoBBfq+Dfw7AlKCCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
 # 5+/bUOIIQBhaMA0GCSqGSIb3DQEBDAUAMGUxCzAJBgNVBAYTAlVTMRUwEwYDVQQK
 # EwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xJDAiBgNV
 # BAMTG0RpZ2lDZXJ0IEFzc3VyZWQgSUQgUm9vdCBDQTAeFw0yMjA4MDEwMDAwMDBa
@@ -322,33 +412,33 @@ New-MgIdentityConditionalAccessPolicy `
 # aWduaW5nIFJTQTQwOTYgU0hBMzg0IDIwMjEgQ0ExAhAIsZ/Ns9rzsDFVWAgBLwDp
 # MA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKECgAAwGQYJ
 # KoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQB
-# gjcCARUwLwYJKoZIhvcNAQkEMSIEIDQKrmKQhNzbIFkzrHR8kZwHVhdEdF3XNuYX
-# NNXY1M4KMA0GCSqGSIb3DQEBAQUABIICAGnlEho6cNplh5hyOB+AQcOb6gsBjnTS
-# 9RhbmJQ0R6dwzOSlfOINGdyxoWbl0vh3H8o2RUKD+yOYJLD3QI6Fi0ssjmarXRLY
-# FwdgCxiGqpWSeTdirMk0OvWyRtYT/fkZWQnLCR5IK9atoSWn80XIzQFTeizhDZi7
-# OkaB1Xw5kJX5tWWoRZJZCc/w4hl43YCI1gxigNDQrg+cRmel5wMAWNZIakHSYaF6
-# PpgsSjN3mWeo19L59uaF/k4IkACH8HE+5Wy8D64NjmQoXnA4HTxdUBtmlE+XJ3EY
-# QvATocw6595shCXOPjDsKf5xolP4lxWiz/GX+Fcj+/I89CyqGZnevwkSVJXh1o2N
-# +o5948fP3yvJYMZMDAnkw2XAhsP9d7+FtCj9NWkxg/itiSTF+KKcPsNW1lleQ2yX
-# 2+ejktkbVaYsazGV+sM00BtESeKU785rFnRHgpaJu2Q5ys6rfvj+aIoacU2+Ve6s
-# /G3Oj2/rEBQYlGgyWyNePJN6HSuONnz9p6YtqR44fxBW+ok5Mxal2MMEvtr3xw13
-# 2PwO1E8QN7Gw/jdo5uPmqJS2wp9HbPp7CN7Z9NCHuT4Gc7v2Ub4MSaZ2W5tYyBln
-# taUyqEiWewssU9198uF1DvtgYL5195Zk93T7WTAkQ2Ny3uuF2tRPMrywG/oEVa9w
-# WrBaQnjf4EEfoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
+# gjcCARUwLwYJKoZIhvcNAQkEMSIEIA3sZdQPVw50Py071C2WRqFz2WID0GS1GgxG
+# lw3KWRr6MA0GCSqGSIb3DQEBAQUABIICAFj+DGeI7L4ykoE4B+68tSmI8/X8V57k
+# GFDJ0m3my0eosixPKDvvt9jhPVaOWW7r2ywvnCiubsD00PwvKkGSA3tag2+8A3AI
+# xp9lCYvh22lS7mxw4uGHNFxVYSgX8Y37N3FID4TI8cMKc2pCmRRjkYBTT+bzj6Wp
+# p4KuVDrQrXbCOLN4wv7pANhAjOSY78eNrXBuL5p7klrr3XGazJPOpMxweMP6l50A
+# GHbv3Wu2y0BPlZRkPRB1riAmng8gpSkptdDV/amPzp1JOjsFIKnK3JjYaNQ/CrQv
+# FfZnrg2oU6pQIwjLDxJabD0Nkv2Gtgs8VB9ljHnXgKV8XhMIEEH9O1OixAel3gy8
+# IRsGJcy1ZJgGB59kFbD8xfpei/zzMAU1uplg4mBFAEZk8ovy9k0O7z0liRmcqPN/
+# WnZPdFAOF+6Uxr5PYpCuvqrFuyvCVIaFQui6Sz2x1fasoFNeD3dEfUYz8ptEddvR
+# Ew7/u07itb9+Yno8uVGhBzfMHySHmEzXWzjQ6rT/cpxl11fJRrts8DZIgiEqeEB5
+# k3fPbjWn5D1gLz9bEs40htZGky4aiG7oI3fyF2LGKktuAFdJ7e3qTzHRlkl9W2Nd
+# l1/mVYRx+no/gd7vwqQKWm2y+FjSiRaXsMvSBrrzelGfTcESyEwydccfY/dotcG5
+# rp2v/YtK1lPRoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
 # A1UEBhMCVVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdp
 # Q2VydCBUcnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQ
 # BUSv85SdCDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzEL
-# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTExNTIwNDU0MFowLwYJKoZI
-# hvcNAQkEMSIEICL3IYqjoSXWTVEpLupnTp7BRJ4wWL0SL+Gk8yd9+1npMA0GCSqG
-# SIb3DQEBAQUABIICAJgS6GQgaaGNqxTDKi9J+Iz2f+eV8r/iBaAUImJ+VjkKZE3O
-# KQHT1jvhc5oy/dm+KcoT0/ZNWmFOfN/mh0Y+HV0q8wq7H3Z72kkwmr1QSNYBCj2X
-# 0eEsE+k+NKR2KAHoCxa6VDToj1IOaTlc9C8gBp2FHaFmIZ2ijVp4qkLG84bYP4oG
-# BFdwVkTIGqwoolhnQBtotN8DygQX2Byuy6zJY8RLSCfcZOnCeiVss0+AiaZ7eC7z
-# qSdHnPn431cy5ofTOKZyAryKC4lqjts5aYMuNRfhHQGKsXRqHnak6X3znekRqppb
-# Cjuq9NeMJ0NrmJ/YZzKORCXrnDEbVYmCUisB2vLVpvbkjVyMLSGuSm2nnvkg4fE2
-# O1nHYI8EHmPJ9EvGQwS45one2jM21o2YtkgloDIplsXwkpcRYw3bE9fgygzk3bnG
-# w5kqdBjJXvKVf+62k1bFvyMfHM5ts4dRpW1kUx22R1sW6oHGkOQa3N/jGxc4tHAm
-# JRDscoCAzXFUtrVxpcWkmNU53JuP76XVO58HTUn1Fqgpo3+Mjmy2VKnqdLHuq8KD
-# S6Eqz+GDXHBwnquR4SvMYEoVdasYtUixxu445iXW83f7jSVKuaRWA+v9iWHdrTRw
-# +KY9rzgkdsvWxhqL6xwwmbj63Q62BI+Tb3MGi2r74IYA/eOPXlt1nwuiFm+i
+# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTExNTIwNDUxNlowLwYJKoZI
+# hvcNAQkEMSIEIFPi8IYVyRbP2BEODM8WHC/vRWJqZr/HAZuf1Pwt0BY2MA0GCSqG
+# SIb3DQEBAQUABIICAEVi2F5aC6ZXhOOpiJJBjGvzkd6+Ji+01GNGcgvohFrazTL8
+# aypVvhfFMmA8kOdWqiG6ckC1+MFfvizZY3UyCp6d+85OTmDTikHNIO60L79jE3ye
+# nySt5Zt0MdXBZL0WBVc+HsJViNvkzS8p6L+yhYyd3FvVQZRdr+PFCCkmvis8S1MB
+# UPgwSNZ1JeKBZpxT9n09ciI5C0oO7Rbw4yXlgth8u/MBV8RkKZE7GhYdkqf1sts6
+# BH0wtQ3d2fq7HIthS4KYzAriQ3caQ8FOdk7UpJXI+xL2B0Pq9uROC7z/G8mKPnI0
+# DIXEW32Bsoc0hmBPF4K23fvkhrmv4c0DMtY3OeMnxOsRTWgWPlk+ZAXCSanuPs6U
+# hLUOjckOjL8/ZcwLKnFwkrJRahvBiLyi0OYrEcZK5EZrbYH6HZWoRv0pe46OzQ7j
+# X9808zbwsuwkAnTDQ4PxbgMwdbGSmEWfESIVVOPMM8KIkH3gmn8kl0zEvIRWgEi1
+# yfudeAkwlpmEvE+3/0VlVSgmEiK2o9NdN4buoamibp6Dq31STr2uEGWzX4CDfDSX
+# BwtTKgSx5KUlmum2Xe2haQQ2BNkb4wQx3ij8fnTu09wGSnnkNIBMXgyxf7dRhM5i
+# 7E95aNGi1cA7c5xs3ox5+whaHWHsL6PgbmyRKSNSz/9wyRQO8Fe5Y7+8ORMG
 # SIG # End signature block

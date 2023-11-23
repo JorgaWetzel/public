@@ -1,146 +1,40 @@
-Write-Host "Installing Microsoft Graph modules if required (current user scope)"
+function getloggedindetails() {
+        <#
+    .SYNOPSIS
+    This function is used to find the logged in user SID and username when running as System
+    .DESCRIPTION
+    This function is used to find the logged in user SID and username when running as System
+    .EXAMPLE
+    getloggedindetails
+    Returns the SID and Username in an array
+    .NOTES
+    NAME: getloggedindetails
+    Written by: Andrew Taylor (https://andrewstaylor.com)
+    #>
+    ##Find logged in username
+    $user = Get-WmiObject Win32_Process -Filter "Name='explorer.exe'" |
+      ForEach-Object { $_.GetOwner() } |
+      Select-Object -Unique -Expand User
+    
+    ##Find logged in user's SID
+    ##Loop through registry profilelist until ProfileImagePath matches and return the path
+        $path= "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\*"
+        $sid = (Get-ItemProperty -Path $path | Where-Object { $_.ProfileImagePath -like "*$user" }).PSChildName
 
-#Install MS Graph if not available
-if (Get-Module -ListAvailable -Name Microsoft.Graph) {
-    Write-Host "Microsoft Graph Already Installed"
-} 
-else {
-    try {
-        Install-Module -Name Microsoft.Graph -Scope CurrentUser -Repository PSGallery -Force 
+    $return = $sid, $user
+    
+    return $return
     }
-    catch [Exception] {
-        $_.message 
-        exit
-    }
-}
 
 
-# Load the Graph module
-Import-Module microsoft.graph
-
-####################################################################### END INSTALL MODULES #######################################################################
-
-Function Connect-ToGraph {
-    <#
-.SYNOPSIS
-Authenticates to the Graph API via the Microsoft.Graph.Authentication module.
- 
-.DESCRIPTION
-The Connect-ToGraph cmdlet is a wrapper cmdlet that helps authenticate to the Intune Graph API using the Microsoft.Graph.Authentication module. It leverages an Azure AD app ID and app secret for authentication or user-based auth.
- 
-.PARAMETER Tenant
-Specifies the tenant (e.g. contoso.onmicrosoft.com) to which to authenticate.
- 
-.PARAMETER AppId
-Specifies the Azure AD app ID (GUID) for the application that will be used to authenticate.
- 
-.PARAMETER AppSecret
-Specifies the Azure AD app secret corresponding to the app ID that will be used to authenticate.
-
-.PARAMETER Scopes
-Specifies the user scopes for interactive authentication.
- 
-.EXAMPLE
-Connect-ToGraph -TenantId $tenantID -AppId $app -AppSecret $secret
- 
--#>
-    [cmdletbinding()]
-    param
-    (
-        [Parameter(Mandatory = $false)] [string]$Tenant,
-        [Parameter(Mandatory = $false)] [string]$AppId,
-        [Parameter(Mandatory = $false)] [string]$AppSecret,
-        [Parameter(Mandatory = $false)] [string]$scopes
-    )
-
-    Process {
-        Import-Module Microsoft.Graph.Authentication
-        $version = (get-module microsoft.graph.authentication | Select-Object -expandproperty Version).major
-
-        if ($AppId -ne "") {
-            $body = @{
-                grant_type    = "client_credentials";
-                client_id     = $AppId;
-                client_secret = $AppSecret;
-                scope         = "https://graph.microsoft.com/.default";
-            }
-     
-            $response = Invoke-RestMethod -Method Post -Uri https://login.microsoftonline.com/$Tenant/oauth2/v2.0/token -Body $body
-            $accessToken = $response.access_token
-     
-            $accessToken
-            if ($version -eq 2) {
-                write-host "Version 2 module detected"
-                $accesstokenfinal = ConvertTo-SecureString -String $accessToken -AsPlainText -Force
-            }
-            else {
-                write-host "Version 1 Module Detected"
-                Select-MgProfile -Name Beta
-                $accesstokenfinal = $accessToken
-            }
-            $graph = Connect-MgGraph  -AccessToken $accesstokenfinal 
-            Write-Host "Connected to Intune tenant $TenantId using app-based authentication (Azure AD authentication not supported)"
-        }
-        else {
-            if ($version -eq 2) {
-                write-host "Version 2 module detected"
-            }
-            else {
-                write-host "Version 1 Module Detected"
-                Select-MgProfile -Name Beta
-            }
-            $graph = Connect-MgGraph -scopes $scopes
-            Write-Host "Connected to Intune tenant $($graph.TenantId)"
-        }
-    }
-}    
-####################################################################### CREATE AAD OBJECTS #######################################################################
-#Connect to Graph
-Connect-ToGraph -Scopes "PrivilegedAccess.ReadWrite.AzureAD, PrivilegedAccess.ReadWrite.AzureADGroup, PrivilegedAccess.ReadWrite.AzureResources, RoleAssignmentSchedule.ReadWrite.Directory, Domain.Read.All, Domain.ReadWrite.All, Directory.Read.All, Policy.ReadWrite.ConditionalAccess, DeviceManagementApps.ReadWrite.All, DeviceManagementConfiguration.ReadWrite.All, DeviceManagementManagedDevices.ReadWrite.All, openid, profile, email, offline_access"
-
-
-#Get PIM role
-$uri = "https://graph.microsoft.com/v1.0/directoryRoles"
-$roles = (Invoke-MgGraphRequest -Uri $uri -Method Get -OutputType PSObject).value
-$PIMrole = $roles | where-object DisplayName -eq "Azure AD Joined Device Local Administrator"
-
-
-## Create Conditional Access Policy
-$conditions = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessConditionSet
-
-## All Cloud Apps
-$conditions.Applications = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessApplicationCondition
-$conditions.Applications.IncludeApplications = "All"
- 
-##All users except the Azure AD admins role and group
-$conditions.Users = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessUserCondition
-$conditions.Users.IncludeUsers = "All"
-$conditions.Users.ExcludeRoles = $Pimrole.id
- 
-##All devices
-$conditions.ClientAppTypes = "All"
- 
-$controls = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessGrantControls
- 
-$controls._Operator = "OR"
-##Require device compliance
-$controls.BuiltInControls = "CompliantDevice"
-
-$name = "Conditional Access - Block NonCompliant Devices"
-
-##Disable initially just in case
-$state = "Disabled"
- 
-New-MgIdentityConditionalAccessPolicy `
-    -DisplayName $name `
-    -State $state `
-    -Conditions $conditions `
-    -GrantControls $controls
+$loggedinuser = getloggedindetails
+$sid = $loggedinuser[0]
+$user = $loggedinuser[1]
 # SIG # Begin signature block
 # MIIoGQYJKoZIhvcNAQcCoIIoCjCCKAYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCB8kpYZLRYoi5Av
-# 4fHISVVTJQrW3xA0ZffIYSSza4b8U6CCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBoUEE9sp5CTtVx
+# /X+Rppe5ryR/XLfPqxrcWuiTzLmS2qCCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
 # 5+/bUOIIQBhaMA0GCSqGSIb3DQEBDAUAMGUxCzAJBgNVBAYTAlVTMRUwEwYDVQQK
 # EwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xJDAiBgNV
 # BAMTG0RpZ2lDZXJ0IEFzc3VyZWQgSUQgUm9vdCBDQTAeFw0yMjA4MDEwMDAwMDBa
@@ -322,33 +216,33 @@ New-MgIdentityConditionalAccessPolicy `
 # aWduaW5nIFJTQTQwOTYgU0hBMzg0IDIwMjEgQ0ExAhAIsZ/Ns9rzsDFVWAgBLwDp
 # MA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKECgAAwGQYJ
 # KoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQB
-# gjcCARUwLwYJKoZIhvcNAQkEMSIEIDQKrmKQhNzbIFkzrHR8kZwHVhdEdF3XNuYX
-# NNXY1M4KMA0GCSqGSIb3DQEBAQUABIICAGnlEho6cNplh5hyOB+AQcOb6gsBjnTS
-# 9RhbmJQ0R6dwzOSlfOINGdyxoWbl0vh3H8o2RUKD+yOYJLD3QI6Fi0ssjmarXRLY
-# FwdgCxiGqpWSeTdirMk0OvWyRtYT/fkZWQnLCR5IK9atoSWn80XIzQFTeizhDZi7
-# OkaB1Xw5kJX5tWWoRZJZCc/w4hl43YCI1gxigNDQrg+cRmel5wMAWNZIakHSYaF6
-# PpgsSjN3mWeo19L59uaF/k4IkACH8HE+5Wy8D64NjmQoXnA4HTxdUBtmlE+XJ3EY
-# QvATocw6595shCXOPjDsKf5xolP4lxWiz/GX+Fcj+/I89CyqGZnevwkSVJXh1o2N
-# +o5948fP3yvJYMZMDAnkw2XAhsP9d7+FtCj9NWkxg/itiSTF+KKcPsNW1lleQ2yX
-# 2+ejktkbVaYsazGV+sM00BtESeKU785rFnRHgpaJu2Q5ys6rfvj+aIoacU2+Ve6s
-# /G3Oj2/rEBQYlGgyWyNePJN6HSuONnz9p6YtqR44fxBW+ok5Mxal2MMEvtr3xw13
-# 2PwO1E8QN7Gw/jdo5uPmqJS2wp9HbPp7CN7Z9NCHuT4Gc7v2Ub4MSaZ2W5tYyBln
-# taUyqEiWewssU9198uF1DvtgYL5195Zk93T7WTAkQ2Ny3uuF2tRPMrywG/oEVa9w
-# WrBaQnjf4EEfoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
+# gjcCARUwLwYJKoZIhvcNAQkEMSIEIOYc5SwOhz6nn1zqKLesq52kkQiAKlKvo5aK
+# 3zGESztiMA0GCSqGSIb3DQEBAQUABIICAFzuaKh5qM3VaWnN/KVI7ycJMM+y4OKW
+# 1grzcmm0v5FTi+xGhKBavJi1FEm0pkIqFfhn9zahbilDbrt6KsaSKqZhTsUPv7O0
+# nxkXVbem/rWYFp4XAqS8MgBzBv9Ga0YhvfWEPEbkT4iZt7JFjngPNEZcIGXFu4l+
+# QKp/EkCiuoy4kjY4HkH0dJgbkENsZYwVw/y6MuoaaBQeOG9NEmMRDa5V+xXmYI5X
+# Ws6Tr4fwqaFkreTT30exUCVKVLUS9n2SKodfq4oZWNi+8F3rfqiyzwxKvI4ulaKa
+# kQzI8Jzup04gmTAwQeSXS/cood+VdFMV0cAOBCALuBbfcniBJ9oCPhDUEn8/i+T2
+# oZe9ys7ZHEa3XJA1KNtQ25QOaZ3HZeP+DYheUbLVNS9jBGnSf7MI5I+O5VePReKN
+# ztLNM/TcuQJZAps277OR04Rysut/YUIhm38kyhyIWj8y9HuFfh5Cxh7t45M7efr6
+# YhbPh2kV8gLB6d82Y9k0r439+PQ+WFSHj9oRR1wAjlXp76O8tbA2s7AJgQngrtme
+# qQlSJI3YYTvL/dzVXT9XyKk94bPX766wrR21gg+6Ng/0YKOmuKmV+RkKmBaFiCV4
+# 9+zR42ToQHuxmHA9B7YmPIZx1MAenIybZQ5Xb7ujF9qzygs0FybxsdErqJoJEqPS
+# aymnIU7PrhmvoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
 # A1UEBhMCVVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdp
 # Q2VydCBUcnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQ
 # BUSv85SdCDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzEL
-# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTExNTIwNDU0MFowLwYJKoZI
-# hvcNAQkEMSIEICL3IYqjoSXWTVEpLupnTp7BRJ4wWL0SL+Gk8yd9+1npMA0GCSqG
-# SIb3DQEBAQUABIICAJgS6GQgaaGNqxTDKi9J+Iz2f+eV8r/iBaAUImJ+VjkKZE3O
-# KQHT1jvhc5oy/dm+KcoT0/ZNWmFOfN/mh0Y+HV0q8wq7H3Z72kkwmr1QSNYBCj2X
-# 0eEsE+k+NKR2KAHoCxa6VDToj1IOaTlc9C8gBp2FHaFmIZ2ijVp4qkLG84bYP4oG
-# BFdwVkTIGqwoolhnQBtotN8DygQX2Byuy6zJY8RLSCfcZOnCeiVss0+AiaZ7eC7z
-# qSdHnPn431cy5ofTOKZyAryKC4lqjts5aYMuNRfhHQGKsXRqHnak6X3znekRqppb
-# Cjuq9NeMJ0NrmJ/YZzKORCXrnDEbVYmCUisB2vLVpvbkjVyMLSGuSm2nnvkg4fE2
-# O1nHYI8EHmPJ9EvGQwS45one2jM21o2YtkgloDIplsXwkpcRYw3bE9fgygzk3bnG
-# w5kqdBjJXvKVf+62k1bFvyMfHM5ts4dRpW1kUx22R1sW6oHGkOQa3N/jGxc4tHAm
-# JRDscoCAzXFUtrVxpcWkmNU53JuP76XVO58HTUn1Fqgpo3+Mjmy2VKnqdLHuq8KD
-# S6Eqz+GDXHBwnquR4SvMYEoVdasYtUixxu445iXW83f7jSVKuaRWA+v9iWHdrTRw
-# +KY9rzgkdsvWxhqL6xwwmbj63Q62BI+Tb3MGi2r74IYA/eOPXlt1nwuiFm+i
+# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTExNTIwNDczM1owLwYJKoZI
+# hvcNAQkEMSIEIDSs+0ATCNQaNB5pg8nMyWhIOplR22iUDy5WzkFLlEEyMA0GCSqG
+# SIb3DQEBAQUABIICAIDV7isYEOcNmi/XlJ2bJrmSKiTfmC62h5yyfMRqZ6P5VjDx
+# U5YFmqADLZopsuvp6hJ50UEh2Ux+XS18KNg2cd22hBOhxNUok7tTXRllDd48aJrJ
+# PckC1BDtDxLk5n3WkbGLHU3DU1Yem3gtv57LYXCXQJZ7SR8x2MRm20Nb6GeTp3ie
+# LrReDBVM+YgWseDr2WISdfe8UjHiREEF7dpZINJl4Y4G8UbYRjFrkcuM0RoGzBJL
+# RhsenPIcYHcvVTLhRw+LWdsD4Q1aCkcSZPs7xYhNjvuSxBcSwvEKWIwXbHSKOkkL
+# d8gYiXUM7rYV/n6tB0uMtSFmkegFhN5eV0qyFradXy11FSO34XbiQ2ou8mtdRLGY
+# NSpEiye2cZ86oPjNXP/1k1iQF7sXzWIygSkem1WmxR8lEQ8esyepikxWCpzJZp2o
+# 7waZLgDvAqaMcSnIEmWBaIKWtRIsRkzSX9Xeo3lkW19yp5L3rAO3dXt8nk+RY/iL
+# lkD+gCg468I76pONI7NPNj3oNHhoXGOnSavVpQyGwHqdfmokfWGrTjpHVQvoWJ3u
+# zM00017YceGc+Zed65nPDTx1IDbrzj0qsq9wTeJ4vkkuk3UvxU/GZ1auLh75omrQ
+# 393uvA8fA/SWMp5YqNeUHlRS6wGGqiDIq7qDwbahPUo0N4Z135jzQ41UEoce
 # SIG # End signature block

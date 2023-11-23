@@ -1,146 +1,140 @@
-Write-Host "Installing Microsoft Graph modules if required (current user scope)"
+    Function Connect-ToGraph {
+        <#
+    .SYNOPSIS
+    Authenticates to the Graph API via the Microsoft.Graph.Authentication module.
+     
+    .DESCRIPTION
+    The Connect-ToGraph cmdlet is a wrapper cmdlet that helps authenticate to the Intune Graph API using the Microsoft.Graph.Authentication module. It leverages an Azure AD app ID and app secret for authentication or user-based auth.
+     
+    .PARAMETER Tenant
+    Specifies the tenant (e.g. contoso.onmicrosoft.com) to which to authenticate.
+     
+    .PARAMETER AppId
+    Specifies the Azure AD app ID (GUID) for the application that will be used to authenticate.
+     
+    .PARAMETER AppSecret
+    Specifies the Azure AD app secret corresponding to the app ID that will be used to authenticate.
+    
+    .PARAMETER Scopes
+    Specifies the user scopes for interactive authentication.
+     
+    .EXAMPLE
+    Connect-ToGraph -TenantId $tenantID -AppId $app -AppSecret $secret
+     
+    -#>
+        [cmdletbinding()]
+        param
+        (
+            [Parameter(Mandatory = $false)] [string]$Tenant,
+            [Parameter(Mandatory = $false)] [string]$AppId,
+            [Parameter(Mandatory = $false)] [string]$AppSecret,
+            [Parameter(Mandatory = $false)] [string]$scopes
+        )
+    
+        Process {
+            Import-Module Microsoft.Graph.Authentication
+            $version = (get-module microsoft.graph.authentication | Select-Object -expandproperty Version).major
+    
+            if ($AppId -ne "") {
+                $body = @{
+                    grant_type    = "client_credentials";
+                    client_id     = $AppId;
+                    client_secret = $AppSecret;
+                    scope         = "https://graph.microsoft.com/.default";
+                }
+         
+                $response = Invoke-RestMethod -Method Post -Uri https://login.microsoftonline.com/$Tenant/oauth2/v2.0/token -Body $body
+                $accessToken = $response.access_token
+         
+                $accessToken
+                if ($version -eq 2) {
+                    write-output "Version 2 module detected"
+                    $accesstokenfinal = ConvertTo-SecureString -String $accessToken -AsPlainText -Force
+                }
+                else {
+                    write-output "Version 1 Module Detected"
+                    Select-MgProfile -Name Beta
+                    $accesstokenfinal = $accessToken
+                }
+                $graph = Connect-MgGraph  -AccessToken $accesstokenfinal 
+                write-output "Connected to Intune tenant $TenantId using app-based authentication (Azure AD authentication not supported)"
+            }
+            else {
+                if ($version -eq 2) {
+                    write-output "Version 2 module detected"
+                }
+                else {
+                    write-output "Version 1 Module Detected"
+                    Select-MgProfile -Name Beta
+                }
+                $graph = Connect-MgGraph -scopes $scopes
+                write-output "Connected to Intune tenant $($graph.TenantId)"
+            }
+        }
+    }  
 
-#Install MS Graph if not available
-if (Get-Module -ListAvailable -Name Microsoft.Graph) {
-    Write-Host "Microsoft Graph Already Installed"
-} 
-else {
-    try {
-        Install-Module -Name Microsoft.Graph -Scope CurrentUser -Repository PSGallery -Force 
-    }
-    catch [Exception] {
-        $_.message 
-        exit
-    }
-}
-
-
-# Load the Graph module
-Import-Module microsoft.graph
-
-####################################################################### END INSTALL MODULES #######################################################################
-
-Function Connect-ToGraph {
-    <#
-.SYNOPSIS
-Authenticates to the Graph API via the Microsoft.Graph.Authentication module.
- 
-.DESCRIPTION
-The Connect-ToGraph cmdlet is a wrapper cmdlet that helps authenticate to the Intune Graph API using the Microsoft.Graph.Authentication module. It leverages an Azure AD app ID and app secret for authentication or user-based auth.
- 
-.PARAMETER Tenant
-Specifies the tenant (e.g. contoso.onmicrosoft.com) to which to authenticate.
- 
-.PARAMETER AppId
-Specifies the Azure AD app ID (GUID) for the application that will be used to authenticate.
- 
-.PARAMETER AppSecret
-Specifies the Azure AD app secret corresponding to the app ID that will be used to authenticate.
-
-.PARAMETER Scopes
-Specifies the user scopes for interactive authentication.
- 
-.EXAMPLE
-Connect-ToGraph -TenantId $tenantID -AppId $app -AppSecret $secret
- 
--#>
+    function getallpagination () {
+        <#
+    .SYNOPSIS
+    This function is used to grab all items from Graph API that are paginated
+    .DESCRIPTION
+    The function connects to the Graph API Interface and gets all items from the API that are paginated
+    .EXAMPLE
+    getallpagination -url "https://graph.microsoft.com/v1.0/groups"
+     Returns all items
+    .NOTES
+     NAME: getallpagination
+    #>
     [cmdletbinding()]
+        
     param
     (
-        [Parameter(Mandatory = $false)] [string]$Tenant,
-        [Parameter(Mandatory = $false)] [string]$AppId,
-        [Parameter(Mandatory = $false)] [string]$AppSecret,
-        [Parameter(Mandatory = $false)] [string]$scopes
+        $url
     )
-
-    Process {
-        Import-Module Microsoft.Graph.Authentication
-        $version = (get-module microsoft.graph.authentication | Select-Object -expandproperty Version).major
-
-        if ($AppId -ne "") {
-            $body = @{
-                grant_type    = "client_credentials";
-                client_id     = $AppId;
-                client_secret = $AppSecret;
-                scope         = "https://graph.microsoft.com/.default";
-            }
-     
-            $response = Invoke-RestMethod -Method Post -Uri https://login.microsoftonline.com/$Tenant/oauth2/v2.0/token -Body $body
-            $accessToken = $response.access_token
-     
-            $accessToken
-            if ($version -eq 2) {
-                write-host "Version 2 module detected"
-                $accesstokenfinal = ConvertTo-SecureString -String $accessToken -AsPlainText -Force
-            }
-            else {
-                write-host "Version 1 Module Detected"
-                Select-MgProfile -Name Beta
-                $accesstokenfinal = $accessToken
-            }
-            $graph = Connect-MgGraph  -AccessToken $accesstokenfinal 
-            Write-Host "Connected to Intune tenant $TenantId using app-based authentication (Azure AD authentication not supported)"
+        $response = (Invoke-MgGraphRequest -uri $url -Method Get -OutputType PSObject)
+        $alloutput = $response.value
+        
+        $alloutputNextLink = $response."@odata.nextLink"
+        
+        while ($null -ne $alloutputNextLink) {
+            $alloutputResponse = (Invoke-MGGraphRequest -Uri $alloutputNextLink -Method Get -outputType PSObject)
+            $alloutputNextLink = $alloutputResponse."@odata.nextLink"
+            $alloutput += $alloutputResponse.value
         }
+        
+        return $alloutput
+        }
+
+    
+        if (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication) {
+            write-output "Microsoft Graph Authentication Already Installed"
+            writelog "Microsoft Graph Authentication Already Installed"
+        } 
         else {
-            if ($version -eq 2) {
-                write-host "Version 2 module detected"
-            }
-            else {
-                write-host "Version 1 Module Detected"
-                Select-MgProfile -Name Beta
-            }
-            $graph = Connect-MgGraph -scopes $scopes
-            Write-Host "Connected to Intune tenant $($graph.TenantId)"
+                Install-Module -Name Microsoft.Graph.Authentication -Scope CurrentUser -Repository PSGallery -Force
+                write-output "Microsoft Graph Authentication Installed"
+                writelog "Microsoft Graph Authentication Installed"
         }
-    }
-}    
-####################################################################### CREATE AAD OBJECTS #######################################################################
-#Connect to Graph
-Connect-ToGraph -Scopes "PrivilegedAccess.ReadWrite.AzureAD, PrivilegedAccess.ReadWrite.AzureADGroup, PrivilegedAccess.ReadWrite.AzureResources, RoleAssignmentSchedule.ReadWrite.Directory, Domain.Read.All, Domain.ReadWrite.All, Directory.Read.All, Policy.ReadWrite.ConditionalAccess, DeviceManagementApps.ReadWrite.All, DeviceManagementConfiguration.ReadWrite.All, DeviceManagementManagedDevices.ReadWrite.All, openid, profile, email, offline_access"
 
+        Import-Module microsoft.graph.authentication
 
-#Get PIM role
-$uri = "https://graph.microsoft.com/v1.0/directoryRoles"
-$roles = (Invoke-MgGraphRequest -Uri $uri -Method Get -OutputType PSObject).value
-$PIMrole = $roles | where-object DisplayName -eq "Azure AD Joined Device Local Administrator"
+        Connect-ToGraph -Scopes "Policy.ReadWrite.ConditionalAccess, CloudPC.ReadWrite.All, DeviceManagementServiceConfig.ReadWrite.All, RoleAssignmentSchedule.ReadWrite.Directory, Domain.Read.All, Domain.ReadWrite.All, Directory.Read.All, Policy.ReadWrite.ConditionalAccess, DeviceManagementApps.ReadWrite.All, DeviceManagementConfiguration.ReadWrite.All, DeviceManagementManagedDevices.ReadWrite.All, openid, profile, email, offline_access, DeviceManagementRBAC.Read.All, DeviceManagementRBAC.ReadWrite.All"
 
+        $autopilotdevices = getallpagination -url "https://graph.microsoft.com/beta/deviceManagement/windowsAutopilotDeviceIdentities"
+        $selecteddevices = $autopilotdevices | Out-GridView -Title "select devices to remove" -PassThru
 
-## Create Conditional Access Policy
-$conditions = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessConditionSet
-
-## All Cloud Apps
-$conditions.Applications = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessApplicationCondition
-$conditions.Applications.IncludeApplications = "All"
- 
-##All users except the Azure AD admins role and group
-$conditions.Users = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessUserCondition
-$conditions.Users.IncludeUsers = "All"
-$conditions.Users.ExcludeRoles = $Pimrole.id
- 
-##All devices
-$conditions.ClientAppTypes = "All"
- 
-$controls = New-Object -TypeName Microsoft.Open.MSGraph.Model.ConditionalAccessGrantControls
- 
-$controls._Operator = "OR"
-##Require device compliance
-$controls.BuiltInControls = "CompliantDevice"
-
-$name = "Conditional Access - Block NonCompliant Devices"
-
-##Disable initially just in case
-$state = "Disabled"
- 
-New-MgIdentityConditionalAccessPolicy `
-    -DisplayName $name `
-    -State $state `
-    -Conditions $conditions `
-    -GrantControls $controls
+        foreach ($device in $selecteddevices) {
+            $deviceid = $device.id
+            write-host "Removing device $deviceid"
+            $url = "https://graph.microsoft.com/beta/deviceManagement/windowsAutopilotDeviceIdentities/$deviceid"
+            Invoke-MgGraphRequest -Uri $url -Method Delete
+            write-host "Device $deviceid removed"
+        }
 # SIG # Begin signature block
 # MIIoGQYJKoZIhvcNAQcCoIIoCjCCKAYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCB8kpYZLRYoi5Av
-# 4fHISVVTJQrW3xA0ZffIYSSza4b8U6CCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDYbd7nBrihp3Jt
+# +TQhhyIXYMUIsxEs8vHAZH2hJwkTz6CCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
 # 5+/bUOIIQBhaMA0GCSqGSIb3DQEBDAUAMGUxCzAJBgNVBAYTAlVTMRUwEwYDVQQK
 # EwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xJDAiBgNV
 # BAMTG0RpZ2lDZXJ0IEFzc3VyZWQgSUQgUm9vdCBDQTAeFw0yMjA4MDEwMDAwMDBa
@@ -322,33 +316,33 @@ New-MgIdentityConditionalAccessPolicy `
 # aWduaW5nIFJTQTQwOTYgU0hBMzg0IDIwMjEgQ0ExAhAIsZ/Ns9rzsDFVWAgBLwDp
 # MA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKECgAAwGQYJ
 # KoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQB
-# gjcCARUwLwYJKoZIhvcNAQkEMSIEIDQKrmKQhNzbIFkzrHR8kZwHVhdEdF3XNuYX
-# NNXY1M4KMA0GCSqGSIb3DQEBAQUABIICAGnlEho6cNplh5hyOB+AQcOb6gsBjnTS
-# 9RhbmJQ0R6dwzOSlfOINGdyxoWbl0vh3H8o2RUKD+yOYJLD3QI6Fi0ssjmarXRLY
-# FwdgCxiGqpWSeTdirMk0OvWyRtYT/fkZWQnLCR5IK9atoSWn80XIzQFTeizhDZi7
-# OkaB1Xw5kJX5tWWoRZJZCc/w4hl43YCI1gxigNDQrg+cRmel5wMAWNZIakHSYaF6
-# PpgsSjN3mWeo19L59uaF/k4IkACH8HE+5Wy8D64NjmQoXnA4HTxdUBtmlE+XJ3EY
-# QvATocw6595shCXOPjDsKf5xolP4lxWiz/GX+Fcj+/I89CyqGZnevwkSVJXh1o2N
-# +o5948fP3yvJYMZMDAnkw2XAhsP9d7+FtCj9NWkxg/itiSTF+KKcPsNW1lleQ2yX
-# 2+ejktkbVaYsazGV+sM00BtESeKU785rFnRHgpaJu2Q5ys6rfvj+aIoacU2+Ve6s
-# /G3Oj2/rEBQYlGgyWyNePJN6HSuONnz9p6YtqR44fxBW+ok5Mxal2MMEvtr3xw13
-# 2PwO1E8QN7Gw/jdo5uPmqJS2wp9HbPp7CN7Z9NCHuT4Gc7v2Ub4MSaZ2W5tYyBln
-# taUyqEiWewssU9198uF1DvtgYL5195Zk93T7WTAkQ2Ny3uuF2tRPMrywG/oEVa9w
-# WrBaQnjf4EEfoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
+# gjcCARUwLwYJKoZIhvcNAQkEMSIEIP54yuyjN7I1XYsWXefg7S5JZWhpMjbTH10o
+# q9vgkT7TMA0GCSqGSIb3DQEBAQUABIICABddjJAESZgoaAgJrjCNuUR4HxY1dcbP
+# PhQFTI3zigDnkfhNtWZGYKfMRD1U+dGUAeZNIUo2QTMSaTyhNOZIu6b/wkZWnEH8
+# p+Xl0QSwYG48tgzc0zREzsH5noFpgVQqidQXHEloYw+tmncgKQKjJBKU5xQfoylD
+# qIXDBu6byYJxCT61fSB2UU9CJELo532wmXHCu9Vh6Plb2D5VIN87dCWl/kQJtY6t
+# 4ekw9ozQUjRERe1oS+UJ4DacYZVsxNijA4E14IAlnPuRqmRxm0Obd31doJUiNJZ2
+# pHIlE/lRAJQuVL/u9dZAGrxNjQ/je9gjHpL3X++TB8AyVs1977QHjvdVdmxRS+Hd
+# lUwNneZtSLAav39yiWfewY2Qh4Lq9Ly2e8w90jgFh+P1rsIDxa9Uw25OWt2B3fFP
+# WIEL7FJUXYXaoODtq3zjbwIjrOtdaUFWOG69zr47y7pkJJ3JAcwEKnY2UjS/slsQ
+# xmYUxXnTk/jnf4z+snxf8ywQ5t8ZBUQFv8mR4tdzOxpXj3tObhZAuFaudcyNrKqi
+# KqMejsfCSI3YWXRAZ/U5UzY57UYuryjUwJi47omJD+mDVtUMk56jIuquFWpOfM7K
+# f6Wcq1uHfQm3jew2WsugcJsx5hUa+R5xFSzd/9w80wRPpIiTyTdH/uWKJfikDFHc
+# O1Wmf9xDHXP/oYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
 # A1UEBhMCVVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdp
 # Q2VydCBUcnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQ
 # BUSv85SdCDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzEL
-# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTExNTIwNDU0MFowLwYJKoZI
-# hvcNAQkEMSIEICL3IYqjoSXWTVEpLupnTp7BRJ4wWL0SL+Gk8yd9+1npMA0GCSqG
-# SIb3DQEBAQUABIICAJgS6GQgaaGNqxTDKi9J+Iz2f+eV8r/iBaAUImJ+VjkKZE3O
-# KQHT1jvhc5oy/dm+KcoT0/ZNWmFOfN/mh0Y+HV0q8wq7H3Z72kkwmr1QSNYBCj2X
-# 0eEsE+k+NKR2KAHoCxa6VDToj1IOaTlc9C8gBp2FHaFmIZ2ijVp4qkLG84bYP4oG
-# BFdwVkTIGqwoolhnQBtotN8DygQX2Byuy6zJY8RLSCfcZOnCeiVss0+AiaZ7eC7z
-# qSdHnPn431cy5ofTOKZyAryKC4lqjts5aYMuNRfhHQGKsXRqHnak6X3znekRqppb
-# Cjuq9NeMJ0NrmJ/YZzKORCXrnDEbVYmCUisB2vLVpvbkjVyMLSGuSm2nnvkg4fE2
-# O1nHYI8EHmPJ9EvGQwS45one2jM21o2YtkgloDIplsXwkpcRYw3bE9fgygzk3bnG
-# w5kqdBjJXvKVf+62k1bFvyMfHM5ts4dRpW1kUx22R1sW6oHGkOQa3N/jGxc4tHAm
-# JRDscoCAzXFUtrVxpcWkmNU53JuP76XVO58HTUn1Fqgpo3+Mjmy2VKnqdLHuq8KD
-# S6Eqz+GDXHBwnquR4SvMYEoVdasYtUixxu445iXW83f7jSVKuaRWA+v9iWHdrTRw
-# +KY9rzgkdsvWxhqL6xwwmbj63Q62BI+Tb3MGi2r74IYA/eOPXlt1nwuiFm+i
+# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTExNTIwNDYyNVowLwYJKoZI
+# hvcNAQkEMSIEILMeQelqEE8A7gsUO9yCtk4NjxszcVFp2dAs1eyySwDKMA0GCSqG
+# SIb3DQEBAQUABIICADMb9XpSGNR4OERsDiL56IKkjM2pAGTgt5W75i6rnISXiEtS
+# FNdzJr6sd0JNqtpUxQpRAcdK2l93QdHtS6DCrXJmiIj4HjKCW7ZlikSCafwJSX7G
+# +8N+y+OZz/c749krdmSTh7wLXGc5d3LqCaCMP9DrBO+C3LvN+p7+JWmcwxc4QXD2
+# HYe/hjUzIW3MAPYRQWjtAG63pqoBdmJ7YarTVLcnO7SjDl0px9kiwluz2Ju4m2Q/
+# Bmm1mk1L6+S/QunUFl/DwhtyLmMKevPy+pXZlvVtgfCXJpXL4+IfJwy04VlYLeQO
+# k2UT7Rfek/3wCZtkhJ3nSqfz3WrAcpQp8+bsmj15XwBLp123CsPakLTVLkc8k82z
+# IycQEDg1G1TD6iXASufwDmEwUlBhAidsU6UI6vYYrvuG/08gyckwP3vGcIv7oquz
+# +dv6WF7uY6HzguRiBW+sR8lzmQko/x4lphFqzhZk2ay7ph3AXBlTJfhbViTHV5Jr
+# i8DlpUUrtHa3Fdhs/Ia1DK0LPrfPA01cJ31L10UF53LhYARpoRinJmUCWtjuA5RJ
+# juWGYCzZjmxLOAwz+7nfY/IkB1kuZ7Dpmp1BitES3LZNBGE42SU9Xy8CIqkPjZVb
+# xm1AsDttmuwwoJ2jm2Ce+zT+Y0ew9o0/FgkQjQXLTH/PFIHsq5aSDRcLef4e
 # SIG # End signature block
