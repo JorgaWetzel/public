@@ -1,14 +1,79 @@
-Write-Host "Requiring Private Store Only"
-$store = "HKLM:\SOFTWARE\Policies\Microsoft\WindowsStore"
-If (!(Test-Path $store)) {
-    New-Item $store
+<#PSScriptInfo
+.VERSION 1.0.0
+.GUID 21dcde37-a510-49b5-88d5-33400d76b980
+.AUTHOR AndrewTaylor
+.DESCRIPTION Installs PS7, Winget and Company Portal
+.COMPANYNAME 
+.COPYRIGHT GPL
+.TAGS intune endpoint MEM environment winget win32
+.LICENSEURI https://github.com/andrew-s-taylor/public/blob/main/LICENSE
+.PROJECTURI https://github.com/andrew-s-taylor/public
+.ICONURI 
+.EXTERNALMODULEDEPENDENCIES
+.REQUIREDSCRIPTS 
+.EXTERNALSCRIPTDEPENDENCIES 
+.RELEASENOTES
+#>
+<#
+.SYNOPSIS
+  Installs PS7, Winget and Company Portal
+.DESCRIPTION
+.Installs PS7, Winget and Company Portal
+
+.INPUTS
+None
+.OUTPUTS
+In-Line Outputs
+.NOTES
+  Version:        1.0.0
+  Author:         Andrew Taylor
+  Twitter:        @AndrewTaylor_2
+  WWW:            andrewstaylor.com
+  Creation Date:  27/11/2023
+.EXAMPLE
+N/A
+#>
+
+# GitHub API endpoint for PowerShell releases
+$githubApiUrl = 'https://api.github.com/repos/PowerShell/PowerShell/releases/latest'
+
+# Fetch the latest release details
+$release = Invoke-RestMethod -Uri $githubApiUrl
+
+##Find asset with .msi in the name
+$asset = $release.assets | Where-Object { $_.name -like "*msi*" -and $_.name -like "*x64*" }
+
+# Get the download URL and filename of the asset (assuming it's a MSI file)
+$downloadUrl = $asset.browser_download_url
+$filename = $asset.name
+
+# Download the latest release
+Invoke-WebRequest -Uri $downloadUrl -OutFile $filename
+
+# Install PowerShell 7
+Start-Process msiexec.exe -Wait -ArgumentList "/I $filename /qn"
+
+# Start a new PowerShell 7 session
+$pwshExecutable = "C:\Program Files\PowerShell\7\pwsh.exe"
+
+# Run a script block in PowerShell 7
+& $pwshExecutable -Command {
+     $provider = Get-PackageProvider NuGet -ErrorAction Ignore
+        if (-not $provider) {
+            Write-Host "Installing provider NuGet"
+            Find-PackageProvider -Name NuGet -ForceBootstrap -IncludeDependencies
+        }
+        install-module microsoft.winget.client -Force -AllowClobber
+import-module microsoft.winget.client
+repair-wingetpackagemanager
+install-wingetpackage 9WZDNCRFJ3PZ -source msstore
+
 }
-Set-ItemProperty $store RequirePrivateStoreOnly -Value 1 
 # SIG # Begin signature block
 # MIIoGQYJKoZIhvcNAQcCoIIoCjCCKAYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCB9nD25TF1BQKBa
-# 7E0av4O12ixZjGlLMApVJRtSUGIpZaCCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAe/1MMcIKKic7v
+# 6xRQGF9itKWHV6G0qJ2xZnXg/PYKe6CCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
 # 5+/bUOIIQBhaMA0GCSqGSIb3DQEBDAUAMGUxCzAJBgNVBAYTAlVTMRUwEwYDVQQK
 # EwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xJDAiBgNV
 # BAMTG0RpZ2lDZXJ0IEFzc3VyZWQgSUQgUm9vdCBDQTAeFw0yMjA4MDEwMDAwMDBa
@@ -190,33 +255,33 @@ Set-ItemProperty $store RequirePrivateStoreOnly -Value 1
 # aWduaW5nIFJTQTQwOTYgU0hBMzg0IDIwMjEgQ0ExAhAIsZ/Ns9rzsDFVWAgBLwDp
 # MA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKECgAAwGQYJ
 # KoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQB
-# gjcCARUwLwYJKoZIhvcNAQkEMSIEINQdEtF4x1W+EYO1u+1PkCLsemB5vMp9MdyU
-# XF9Y6ijNMA0GCSqGSIb3DQEBAQUABIICAKgakcGBZiwlvtGK/URVmZRlhyvqv0Ka
-# tQzcxvqpCuYQSMfZXNd1NCBMz0rzn3e+IkKmm4ew40RDoI0dIOQfEskmwZJX/4yU
-# VqsWA+rN0wuuG1IwVTf0uPeAFK3u9v5wfIUbpru7dn45+ELM2qiTg+7J0MIR+4aU
-# 7l5Ddz1ZIqgMFD0Bu/08P1Z5gmCdJ74N478UphG9NxDyGG6lcIJ0YA3q1TXsLkgk
-# 0E9MIV2jpUDRIpS796NDoEaBhauH803/u/Q1TA7+WUsFs0tY6GFZwKBi1ZE06cu7
-# aTH9XYvldc1T9CCMP+VGkPPH2oHNxX6nhCuN5IUm3v0ikb/FHh1Qvjy6/5KXUBY0
-# nQUMN1plOun++Y+PT7lXGuZ8ZZ9V+UjSfnJ6RXTGyIZdPnlmQaApl8md08NSuteJ
-# hjiUk/or9oLvlPsRs0kKKJfDxUHysIlmtZLOviNC+SUqsZQ5TdLgXx+hQTSkLOjX
-# 3UHoEeUGFl0HHb1lK8kA3utZM5wqDFi+Jm9n4rYi0ogN8TIbCaNYrq+LXY/85B1r
-# eMjwzmXNS8QHYIMerbqw6SxLBNq3HxH5Dy9W0/jUKv9Pm0eh/1jv4jjVNm0RDLzP
-# +t9n8b2EUqjCaNGXLUTjvpeVqy7b91FPun3+Ka57faI8WbVTGpDAa0heBNio5cBj
-# 63j4tkTY4xP7oYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
+# gjcCARUwLwYJKoZIhvcNAQkEMSIEIGtj4l4uv7Yoc3xPcbSUcKCn+fDZVdtyMbuh
+# T1pYRknXMA0GCSqGSIb3DQEBAQUABIICAH3aN5vRc1+wQmceux0cxgVbo/jv8Mj+
+# Qj9RCIBWUQYepDH2tHvgcB1y3vSfZ5Y2Q21bH4mf4oRIk0am6k64DTSL/2IfdKvD
+# DrlBLwWBb8lEcm+SSi6l548P50SG10zgVYPG8AX5SoN/Cn2gBi2Tvkclvfc9vj+H
+# mvgTvtl4WesCAjCmuZnn0Sg2T5eoW+EK4NUdg1yGJNU0AZulxWFfpvoondJO6j7X
+# M46bxiqA5x6AbEkCt3rc8fv6d4Yj590jArE8aCQ/yc6NULzgvT2Q+xlXLGve0uZf
+# dhgoQKgxGWtWEGPKyxxG2QEdysKKK4g/l6gsQ74XCO8RgZpV5PunfhMFzrW7CiNx
+# kHHGO0KGkvIB2tI6Oc2XodnuYnou9O6OWbca53YYaFPuJtlw1l0tR9S2D0MIbmHw
+# OqiXMcZeVrHBvLOQ/OW5wb6y5iUelfyQY2i/I1WM9wzAhxO/FAkPUzet2WYWjLMG
+# X4g+WyD4j0WSOOfpXN/9J0EN541Pbn6JAULyBodyXBk0sCLh3ih2IPFsWNqt17eK
+# BXu3BgNNxRlW+uMq5qK6StC2FFATh4f4A4qKiq+pjNfETc//eZmrPs8OINk5I/MV
+# WMADss/8dCXBRm6J9hmj3hByI1kkkhJEOarEMehV2zubXJApwR1baZYO/LDNEOdk
+# 7oo3bCO2olSQoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
 # A1UEBhMCVVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdp
 # Q2VydCBUcnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQ
 # BUSv85SdCDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzEL
-# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTExNTIwNDUyN1owLwYJKoZI
-# hvcNAQkEMSIEIF7XeFqdfxxUa82w54mLzVFh9iTmWkCNFnOx/gkfy0fdMA0GCSqG
-# SIb3DQEBAQUABIICABYi/iFR0LSMNomnwOmHLZwhlN9VrHW3EU0NvXun1K/9FxMm
-# r/JxQCLOZRCphN7EWVkqGdqaaCKgyTQX8YHpwcAsCefDNxMPvZXILyqhL8d6NZBl
-# ry2pyFq/waVAHn3Tmyiaw90QsgDP/K0Zj7GsmA+PIO/eetiKkZ+YKZ+Dc6I46z70
-# fsvHrnYCgYHN18J0FGBTvLJUKeaX2ybUotoeXa8W/ajyhtfJDAe6B92oDp7OVKUu
-# NRb9Geq2rTWMkEPfaWArMf4FPrfljG0xYu87KnlQ0VGSZw2TVXY8aTitECnUsGWm
-# m1NDo9Lkavj5AL0T7AzKZQY+/mcd4MLbP+QRmIsggdh5oLZByjJ1npUQt34HG+Pj
-# fIK94jf4TDtXEmtCcEW0p+xla+D77v4X9W7iozrocRE/wGgWjJk+IK1rCBxeNIT2
-# JUOShJes15eA3NpsXaD68jHi+WnqGNGF/KxXaG9R6XH0ZrK4K4nigh6ebsMaoAEq
-# 0eM1xqbtk9//EQRWpGzXc1hk7OBX0WcroiFkIKkbTbFCHxiLiSKw+AqR9tqnxQmk
-# d+s8oyjALoikeSEvpRfnjNTbBd1RihunF6UeMfmym611GoQ2V9/DKSxHIXeCfvgD
-# ByIzrHYvKAnQwbnj+esEPmxms6hQ2ECUo6turylrqaQk35y7XlhJsX8urbNd
+# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTEyNzE3NDUzN1owLwYJKoZI
+# hvcNAQkEMSIEIARVkA1M6TPHsu0uQT/o3csVGGoB1FRmuEP7QbSTKdq1MA0GCSqG
+# SIb3DQEBAQUABIICAHl+7ZkWXtrjFV0zTpkeNLXg81Joe1+EgubU9Q4mGFuL5Rdx
+# S7Ao0HOvUh5ByE7hsbfuzPfiHLczEOzXEQ/E3SYhJhWyus0sInhzbO87SKnPi5Y4
+# uaIrncspDQGptAA8swAIj13eHwkEqLfP7VmBsZaTXJfx0684eVbGe7Un6iI3QmwE
+# Ph2TMdL50desZDZ+CMYzi4tip6jS9p96uwzkqJWf2f0zwylRcJldyak+iCYojuwM
+# 268Vngvh4Bh1WdEv0iGKsYAW3zxshAUGEWemjWwxXjBeuJCNhVAFoFmrtn5P3KnK
+# Q1CIY5/jjM0ZwLVlxnN1dJWcPa7l+HXmjBSn9D6miFuMzAq2wasCxf+nFtfcvKij
+# 3jVGkG/sHtpWMLEzDivaQz/sX/4Pt9nfjbWP/lQc0NnESITwfcxRjsq0qKEQsGWr
+# U9eWlkXETVfnsxOAluYVc7E91ByGzsRG0mfq8k4ltzcTV2Cf/XxpeFZ128uN4odt
+# FvLRVllmfqg1q1Kh1X8wWluQ4I2tNNETMRD9K4+W35mzDlQtcaTo/tdL27hym4ui
+# D7ANx8pbMvbhiSM/TJ+ssF/FhgEjSrWfRIMsF8PUdTsoRnZt/ivj7Y51O3p8udgy
+# Is4ehni/LsmVwwoqA7CWM7YKj27RLgkJpCbYmhPnoocAvAtlVZtVFD1nFcLL
 # SIG # End signature block
