@@ -1,5 +1,5 @@
 <#PSScriptInfo
-.VERSION 3.0.2
+.VERSION 3.0.5
 .GUID 26fabcfd-1773-409e-a952-a8f94fbe660b
 .AUTHOR AndrewTaylor
 .DESCRIPTION Creates a Windows 10/11 ISO using the latest download and auto-injects Autopilot JSON
@@ -28,12 +28,12 @@ Profile and Windows OS (from Gridview)
 .OUTPUTS
 In-Line Outputs
 .NOTES
-  Version:        3.0.2
+  Version:        3.0.5
   Author:         Andrew Taylor
   Twitter:        @AndrewTaylor_2
   WWW:            andrewstaylor.com
   Creation Date:  27/06/2023
-  Last Modified:  02/10/2023
+  Last Modified:  09/01/2024
   Purpose/Change: Initial script development
   Change: Amended to grab latest supported versions
   Change: Now uses Fido (https://github.com/pbatard/Fido) to grab ISO URL
@@ -42,6 +42,8 @@ In-Line Outputs
   Change: Languages fix
   Change: Added support to select version
   Change: JSON update
+  Change: Region fix
+  Change: Added ISO path parameter
 .EXAMPLE
 N/A
 #>
@@ -55,6 +57,8 @@ param
     [string]$clientid #ClientID is the type of Azure AD App Reg ID
     ,
     [string]$clientsecret #ClientSecret is the type of Azure AD App Reg Secret
+    ,
+    [string]$isopath
 
     )
 
@@ -190,7 +194,9 @@ if ($oobeSettings.hideEULA -eq $true) {
 if ($oobeSettings.skipKeyboardSelectionPage -eq $true) {
     $oobeConfig += 1024
     if ($_.language) {
-        $json.Add("CloudAssignedLanguage", $approfile.language)
+        $json.Add("CloudAssignedLanguage", $_.language)
+        # Use the same value for region so that screen is skipped too
+        $json.Add("CloudAssignedRegion", $_.language)
     }
 }
 if ($oobeSettings.deviceUsageType -eq 'shared') {
@@ -334,14 +340,20 @@ $selectedprofile = GrabProfiles
 $profilejson = grabandoutput -id $selectedprofile
 
 ##Set filename and filepath
-$isofilename = "$path\microsoftwindows.iso"
 $isocontents = "$path\iso\"
 $wimname = "$isocontents\sources\install.wim"
 $wimnametemp = "$path\installtemp.wim"
 
+##check if ISO path has been passed
+$isocheck = $PSBoundParameters.ContainsKey('isopath')
 
+if ($isocheck -eq $true) {
+    $isofilename = $isopath
+}
 
+else {
 
+$isofilename = "$path\microsoftwindows.iso"
 write-host "Selecting OS"
 write-host "Finding latest supported versions"
 $allversions = @()
@@ -531,6 +543,7 @@ while ($download.JobState -ne "Transferred") {
 }
 Complete-BitsTransfer $download.JobId;
 write-host "Download Complete"
+}
 $isofilenamewithap = "$path\windowswithautopilot.iso"
 ##Mount the ISO
 write-host "Mounting Windows ISO"
@@ -654,10 +667,16 @@ write-host "ISO Ejected"
 write-host "Removing temporary WIM"
 remove-item $wimnametemp
 write-host "Removed"
+if ($isocheck -eq $true) {
+  ##Leave ISO
+}
+else {
 ##Remove the original ISO
 write-host "Removing original ISO"
 remove-item $isofilename
 write-host "Removed"
+}
+
 ##Remove the extracted ISO contents
 write-host "Removing extracted ISO contents"
 remove-item $isocontents -Recurse -Force
@@ -676,8 +695,8 @@ write-host "ISO Creation Complete"
 # SIG # Begin signature block
 # MIIoGQYJKoZIhvcNAQcCoIIoCjCCKAYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAjfxpHiQRWE+8y
-# BNM6tvyfmFGyeKwUcKB94llxvdbqn6CCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBvZEBtBvxbEnYQ
+# 12+HCe2RPm5oo+XKGI4BN4mEmI2T2KCCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
 # 5+/bUOIIQBhaMA0GCSqGSIb3DQEBDAUAMGUxCzAJBgNVBAYTAlVTMRUwEwYDVQQK
 # EwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xJDAiBgNV
 # BAMTG0RpZ2lDZXJ0IEFzc3VyZWQgSUQgUm9vdCBDQTAeFw0yMjA4MDEwMDAwMDBa
@@ -859,33 +878,33 @@ write-host "ISO Creation Complete"
 # aWduaW5nIFJTQTQwOTYgU0hBMzg0IDIwMjEgQ0ExAhAIsZ/Ns9rzsDFVWAgBLwDp
 # MA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKECgAAwGQYJ
 # KoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQB
-# gjcCARUwLwYJKoZIhvcNAQkEMSIEINvaLS5HncWjuTt5MiAzYIclR9ABU6+17nSZ
-# v2FbSM0/MA0GCSqGSIb3DQEBAQUABIICADU18btXWhVxg+ac+zjBPgj+2iZ23GvQ
-# My1iM2YO7lFGxTekV3RArPIT944yriC8KIOaoUCbX9xH9wxWkR3zkdPK1fiAl5SN
-# I8El0e0rG8Yegvu7yu7DpApxVMWkaj36x3UI9y+cYIgR0JTAFdz3JYE9RWc7zOIV
-# II6UqH5epdoxN96Lj69gciaLXiIc4haLon6soDl7g/iZfyRN/NBqoBrto8eE5WBl
-# 5wIS3UEESWMhenYzfdf760SvHsz1vCEJNGG/bIl35Mw73vnEydI9rp6R/lPZhhcR
-# WD5kGbE/12DImcksEq7cBKP25h4utHdS0cDNscRzBpZig3VaJIkZ8JA4yldKL1ua
-# nlKznmwUaisxto//U/aS/dSqATklUnFX4dtAAgkBlvXPmhYOtoqumupTI1cqMg2J
-# sIqzeb19RojaQwRe9o7XR8jXWu3pem2wMO02KEdJLPhRNirl+ARWFaVJU1mh7j9a
-# GiuqlI6s98D6GcEb6rjnbq2u6jYxR6QCmIhEzNqKD8lkSwBrbVLhDn9bIh471tY2
-# MCK2YvhDL9iIzTSwzVteVZkfzv443ZCi0D/cx8DxUqWYhPgazoWtev6V2HAxX59A
-# 0yEhpmbM/TnZK3TSYZ3nfaUl58sGHwG76IJwprrvAjsOKbr++fdMdrY5ZeLVZfRd
-# RF1DW1iPMMoioYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
+# gjcCARUwLwYJKoZIhvcNAQkEMSIEID2wSI7uBb1kzu1ioDI/ajFoSOS+gQvf2C4v
+# bz7Ik9YKMA0GCSqGSIb3DQEBAQUABIICAAp+o71xYaSKwAnTjULS1scXm4eez5Jd
+# IwEXOSSvgVS6p42SghMFnWB+W9EWWv1Yu1//qLf6muo6q1Yb0ujNHNMGL21G9Yw2
+# H5QUX8ITOahf1IPKb3y8ZcOKt2hTwl1rPU7cDf3f47L7hY4+OfaWsP4VdNoZ0l4K
+# rYWZ14vx2gY4RwDO82xLuMlHCMlS0Qt9XQFoN8GwLaE7rSJmEnMc7b/46IZ75RC1
+# OB2oHZfmvlXC3mVTWN2XMAeiZDidmZKZCsHZrz2889nP+bS28hvQuR9W9auSePlk
+# z7fvlPuT9+xLk/vWZIaRtnRaaFMWpUQhdBoyRENz7LDWL0bKTARlvqjK3t7HZ/Qc
+# ZXoDrpGMYOTr8N3hW5hY6KJFQgGCXC/8XvXp3Bb/+pieWDV3QO1R7GJCltr9Jzwq
+# m/r/QTCnaEFreCrtSUagNPrpLW5LsERLozv0gqIyEpk/HnlLpHFVP/GoKdFo91aC
+# yoEhpwdxY0hi18DFv81EMffrwa7iF0Om3xhjX62+DXoBBOtRxZwoeG2Io0q9UWOn
+# PJgwFLZYMxOAhXlDjXlLkxO82Zj+og5xpcFKWlXvCK9jr1v/hvSqSQhGsW1YAtvL
+# Lo7jsfsEAqQv5HB8/AnY+CB2C56VgxcAoUN4VlpYdox3MN/yDDvLuviE7wePgJaF
+# nnRMgdQnER1PoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
 # A1UEBhMCVVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdp
 # Q2VydCBUcnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQ
 # BUSv85SdCDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzEL
-# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTExNTIwNDY1OFowLwYJKoZI
-# hvcNAQkEMSIEII+NCbOBmsS1cADHTP/3lh1qMp9u3QLD+MaO4oUroitGMA0GCSqG
-# SIb3DQEBAQUABIICACh6UjJVOSBPelDTnHY8mXUw9hdGm39H51JATvH+y/DLH39a
-# 4Ep86mJixOtl7bu+OUXx+mzEbKcieOxFUvnlH+o0AgGVyEVpECfNAjh9CtYd15/J
-# LZTDpvzqEv2nXM967nM7C2L0izPncUz4c/l1OV8Y/0rOScuJ6WOumL3z7Buk0wQm
-# nBNiIwgnWMMYknGqxzmyDx8wUn1d7xUXHXpMfnqAsn/CmWl7nheMSwG1W69yfdzl
-# rVg1dXac48xlyQsxXFSPLrjM73NGNst6xtRkiW4vUwgR9YNJQayI5FgRMnjB7foj
-# J/2F43CDu9Z3OuaHzaWqCRQM8rIqIClQ83ffpM4ZAfi90KjBWPYmq38fu61DscJI
-# R7Orct+zCSw1r2rSBxKr/V80Nrfhs+KRgAR2u65Z4RYi1to4JlA6CokIujNhdhY/
-# XzkwvZ+po4duc8SZuMK7u/6uqPHVUnWPp2qQ+4ac4X6ARQc7k/qFrvg7y9O5PfvY
-# WcnIi1SzqRKJMHCUt9DsP7zWJilVYqZc1t7RlyVAiHqNvaiilqudhYlsapnHRbcc
-# xkA8J+eXzw9IJzAg60Ah0NEqiKXim1bYfb8unSUU7cyySqsME+LJCumORW64W3ud
-# b01hNBtkeM/XU4GBzmIAPQfH4yvbbkhK/upnsljRdTwEzYCGTcNJDK/e/0eK
+# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTI0MDEwOTE0MDgxMFowLwYJKoZI
+# hvcNAQkEMSIEIG1MaMUH5zp84tIx2nkuB8Pwcx5OfG0la+GZ69S6FkqQMA0GCSqG
+# SIb3DQEBAQUABIICAENybXB9iaZmhtrZU8gze8aRQHXApIVFB9xLG70bW9aAkmlw
+# 38+J1BdMpTq+JHQgazF+bBF8UqJScbRuEwfZUVDzjiDr/pCxGfIhe8DSKF2Vd4q5
+# qtSvxAn1BT76Pz7Y6WOgfu5UXo8M0qJrvqIplW6yy+yDanPLTvASD/zJZxCaYumY
+# aeNx1oELEvAa4odesGBvYyqho9de4mJhaLlKUm1/uZQclFPhjptNhmIzJgaR+m7Y
+# nlS2jYHdVBVLoUaFbz2Tze2MgjCLjZ8/JM2zU9oJsGnRaYzcGLZrTteYXmQOEw8m
+# 20pqsabDg7/mrph7gpGG2q/S89a9UgaInnWzyTG2xrVGfvoXS5shhKtRkV9aX/gB
+# LItY4QOI7YLPj6ekEYVyHfUp9gy2OfZZ4vV0YE1daHnkcqHvpOc46u7+j3bB7P4n
+# eSOKinxHovqhKbDTD2czaB2DUsMAyWkkSK3+DFCCdXDtLjc6yzG6bXRItsU5Nv9X
+# Yjle+z3O4PRmuSlDobxb3fXG3z3Jv/PuJhZ16zRZWCQ7E/+lR7O+xbIXfwWzPZQr
+# 1GMVwWR0R0kl39jUYVY3zp2/zf2KlSHWrJx1ujMMVcIFyYwx/c2GiQXxLJaTwFok
+# 8AUHI75VhuA+QBiqFgQNKC3SjGFP8B40SFz9EhQWrgmJU88LRtq9Z32LN6+o
 # SIG # End signature block

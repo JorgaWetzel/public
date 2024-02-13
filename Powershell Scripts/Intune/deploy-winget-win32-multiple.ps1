@@ -1,5 +1,5 @@
 <#PSScriptInfo
-.VERSION 4.0.6
+.VERSION 5.0.0
 .GUID f08902ff-3e2f-4a51-995d-c686fc307325
 .AUTHOR AndrewTaylor
 .DESCRIPTION Creates Win32 apps, AAD groups and Proactive Remediations to keep apps updated
@@ -30,12 +30,12 @@ App ID and App name (from Gridview)
 .OUTPUTS
 In-Line Outputs
 .NOTES
-  Version:        4.0.6
+  Version:        5.0.0
   Author:         Andrew Taylor
   Twitter:        @AndrewTaylor_2
   WWW:            andrewstaylor.com
   Creation Date:  30/09/2022
-  Last Modified:  15/11/2023
+  Last Modified:  18/01/2024
   Purpose/Change: Initial script development
   Update: Special thanks to Nick Brown (https://twitter.com/techienickb) for re-writing functions to use MG.graph
   Update: Fixed 2 functions with the same name
@@ -51,6 +51,11 @@ In-Line Outputs
   Update: Added Logging for Runbook
   Update: Added support for Available Installation via parameter
   Update: Code signed
+  Update: Removed sleep from detection script
+  Update: Added support for Winget PowerShell module on PS7
+  Update: Bug fix
+  Update: Issue with PS7, added logic to relaunch in PS5 with params
+  Update: Changed from IntuneWin to PS module from Stephan van Rooij (https://svrooij.io/2023/10/19/open-source-intune-content-prep/)
 .EXAMPLE
 N/A
 #>
@@ -141,7 +146,15 @@ Add-content $LogFile -value $LogMessage
 }
 
 
-
+if ($PSVersionTable.PSVersion.Major -eq 7) {
+    Write-Host "PS7 detected, re-launching in PS5"
+    writelog "PS7 detected, re-launching in PS5"
+    Stop-Transcript
+    $params = $MyInvocation.BoundParameters.GetEnumerator() | ForEach-Object { "-$($_.Key)", $_.Value }
+    $paramsString = $params -join " "
+    Start-Process -FilePath "powershell.exe" -ArgumentList "-Version 5", "-File", $PSCommandPath, $paramsString -Wait
+    exit
+}
 ##########################################################################################
 #$cred = Get-Credential -Message "Enter your Intune Credentials"
 ###############################################################################################################
@@ -229,8 +242,19 @@ else {
     }
 
 
+    if (Get-Module -ListAvailable -Name SvRooij.ContentPrep.Cmdlet ) {
+        Write-Host "Microsoft Graph Already Installed"
+        writelog "Microsoft Graph Already Installed"
+    
+    } 
+    else {
+    
+            Install-Module -Name SvRooij.ContentPrep.Cmdlet  -Scope CurrentUser -Repository PSGallery -Force 
+        }
+
 
 #Importing Modules
+Import-Module -Name SvRooij.ContentPrep.Cmdlet
 Import-Module powershell-yaml
 Import-Module microsoft.graph.groups
 import-module microsoft.graph.intune
@@ -315,37 +339,6 @@ Connect-ToGraph -TenantId $tenantID -AppId $app -AppSecret $secret
     }
 }    
 
-Function Get-ScriptVersion(){
-    
-    <#
-    .SYNOPSIS
-    This function is used to check if the running script is the latest version
-    .DESCRIPTION
-    This function checks GitHub and compares the 'live' version with the one running
-    .EXAMPLE
-    Get-ScriptVersion
-    Returns a warning and URL if outdated
-    .NOTES
-    NAME: Get-ScriptVersion
-    #>
-    
-    [cmdletbinding()]
-    
-    param
-    (
-        $liveuri
-    )
-$contentheaderraw = (Invoke-WebRequest -Uri $liveuri -Method Get)
-$contentheader = $contentheaderraw.Content.Split([Environment]::NewLine)
-$liveversion = (($contentheader | Select-String 'Version:') -replace '[^0-9.]','') | Select-Object -First 1
-$currentversion = ((Get-Content -Path $PSCommandPath | Select-String -Pattern "Version: *") -replace '[^0-9.]','') | Select-Object -First 1
-if ($liveversion -ne $currentversion) {
-write-host "Script has been updated, please download the latest version from $liveuri" -ForegroundColor Red
-}
-}
-if (!$WebHookData){
-    Get-ScriptVersion -liveuri "https://raw.githubusercontent.com/andrew-s-taylor/public/main/Powershell%20Scripts/Intune/deploy-winget-win32-multiple.ps1"
-    }
 
 
 ###############################################################################################################
@@ -385,10 +378,11 @@ New-Item -ItemType Directory -Path $path
 
 
 ##IntuneWinAppUtil
-$intuneapputilurl = "https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/raw/master/IntuneWinAppUtil.exe"
-$intuneapputiloutput = $path + "IntuneWinAppUtil.exe"
-Invoke-WebRequest -Uri $intuneapputilurl -OutFile $intuneapputiloutput
+#$intuneapputilurl = "https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/raw/master/IntuneWinAppUtil.exe"
+#$intuneapputiloutput = $path + "IntuneWinAppUtil.exe"
+#Invoke-WebRequest -Uri $intuneapputilurl -OutFile $intuneapputiloutput
 
+if (!$WebHookData){
 ##Winget
 $hasPackageManager = Get-AppPackage -name 'Microsoft.DesktopAppInstaller'
 if (!$hasPackageManager -or [version]$hasPackageManager.Version -lt [version]"1.10.0.0") {
@@ -406,7 +400,7 @@ if (!$hasPackageManager -or [version]$hasPackageManager.Version -lt [version]"1.
 else {
     "winget already installed"
 }
-
+}
 
 ###############################################################################################################
 ######                                          Add Functions                                            ######
@@ -1334,6 +1328,18 @@ Function Get-IntuneApplication() {
         
 }
         
+
+
+
+    write-host "Running PowerShell 5"
+    WriteLog "Running PowerShell 5"
+    Write-Verbose "Loading WinGet Functions for PowerShell 5"
+
+
+
+##################################################################################################################
+####################                WINGET FUNCTIONS FOR PS 5                       ##############################
+##################################################################################################################
 Function Find-WinGetPackage {
     <#
         .SYNOPSIS
@@ -1461,17 +1467,8 @@ Function Find-WinGetPackage {
 }
 
 
-##Check if running PS5 or PS7
-if ($PSVersionTable.PSVersion.Major -eq 5) {
-    write-host "Running PowerShell 5"
-    WriteLog "Running PowerShell 5"
-    Write-Verbose "Loading WinGet Functions for PowerShell 5"
-    WriteLog "Loading Winget functions for PowerShell 7"
 
 
-##################################################################################################################
-####################                WINGET FUNCTIONS FOR PS 5                       ##############################
-##################################################################################################################
 
 
 Function Install-WinGetPackage {
@@ -2271,23 +2268,7 @@ Function Get-WinGetPackage {
 #######################################################################################################################
 #################                           END WINGET FUNCTIONS                                #######################
 #######################################################################################################################
-}
-##Else if running PowerShell 7
-else {
-    write-host "Running PowerShell 7, importing module"
 
-    if (Get-Module -ListAvailable -Name Microsoft.Winget.Client) {
-    Write-Host "Microsoft Winget Client Already Installed"
-    writelog "Microsoft Winget Client Already Installed"
-
-} 
-else {
-
-        Install-Module -Name Microsoft.Winget.Client -Scope CurrentUser -Repository PSGallery -Force 
-
-}
-    import-module microsoft.winget.client
-}
 
 function new-aadgroups {
     [cmdletbinding()]
@@ -2476,8 +2457,8 @@ function new-intunewinfile {
         $apppath,
         $setupfilename
     )
-    . $intuneapputiloutput -c "$apppath" -s "$setupfilename" -o "$apppath" -q
-
+    #. $intuneapputiloutput -c "$apppath" -s "$setupfilename" -o "$apppath" -q
+    New-IntuneWinPackage -SourcePath "$apppath" -SetupFile "$setupfilename" -DestinationPath "$apppath" 
 }
 
 function new-detectionscriptinstall {
@@ -2491,8 +2472,7 @@ function new-detectionscriptinstall {
         if (`$ResolveWingetPath){
                `$WingetPath = `$ResolveWingetPath[-1].Path
         }
-    start-sleep -seconds 10
-    
+       
     `$Winget = `$WingetPath + "\winget.exe"
     `$wingettest = &`$winget list --id $appid
     if (`$wingettest -like "*$appid*"){
@@ -2778,6 +2758,7 @@ Write-Progress "Loading Winget Packages" -PercentComplete 1
 
 $packs2 = find-wingetpackage '""'
 
+
 Write-Progress "Loading Winget Packages" -Completed
 $packs = $packs2 | out-gridview -PassThru -Title "Available Applications"
 }
@@ -2990,8 +2971,8 @@ if (!$WebHookData) {
 # SIG # Begin signature block
 # MIIoGQYJKoZIhvcNAQcCoIIoCjCCKAYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBPreXpQfcUidiM
-# jg4GFzXrcjPUGrJ44TKDQ12O4/4uAKCCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBfJnwDrSLz18kc
+# 5kW/bznyN7T82PEiJTcURwnw9mu8RKCCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
 # 5+/bUOIIQBhaMA0GCSqGSIb3DQEBDAUAMGUxCzAJBgNVBAYTAlVTMRUwEwYDVQQK
 # EwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xJDAiBgNV
 # BAMTG0RpZ2lDZXJ0IEFzc3VyZWQgSUQgUm9vdCBDQTAeFw0yMjA4MDEwMDAwMDBa
@@ -3173,33 +3154,33 @@ if (!$WebHookData) {
 # aWduaW5nIFJTQTQwOTYgU0hBMzg0IDIwMjEgQ0ExAhAIsZ/Ns9rzsDFVWAgBLwDp
 # MA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKECgAAwGQYJ
 # KoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQB
-# gjcCARUwLwYJKoZIhvcNAQkEMSIEIFJUKBzFs6QB0DXf5ogynkGy3+wYyYfQxUuL
-# SHtWw0WlMA0GCSqGSIb3DQEBAQUABIICABC6P3DmzNETSbZjRvHJzVv0If1V3TWR
-# IlynOWTjWfLw2CYZCsMlkYaVTMfOeWyQ6Qxc8/NBJAL5lJ4pRc/W0eMufqaEvQwX
-# N2yE+5sdBozXRD07K9bhtgX9bFfccyqyrit4s6dKOq3SP1L+xuwt+gD7iLhlNSqz
-# Lkkr0JOHauNrY+q1k3u/qlJCui0BRUcWNCtzmYdkady6x7SXjg4jxxAEA83AVAwe
-# xnHApkJYxnV4JOO8Fp1KP8KvDx7XxNlDIrTnHhFqzZa3zLktABTXsgL7obn6jXoI
-# Br0gNwqBQ7KsTLhyxAf9xwvI1av5kDEZd7sHZg7MkGduAFmfIGcxnnTe+xwarw+g
-# oMQfVcoDEgY5W2lOSwvep8v1xSMILMGGj0jVa5CW7RH7swuisPcowz81X0KiYI/1
-# 0w51uQeYoawyU9MftJeuXHEk9n+gAdtP6gu4RreY2FbN4gJ0lhxO+EXwPPeZVIjU
-# /mlWtvQkCePcGOrZVmvN9ikoCudjHUaqUt13RbtqKtpiKRNJ1yLIt22TnBXM7m4x
-# BeGIWgzGDrzsXOiYl3/wfP8hyBmo6wbUfpfGeaT2Kj8dQaCTVoucyWloRCyzn8iO
-# sLys/csDkACwuGjYTF0d1cAClLNG62TC1rxweq0fO9dQ9TqfX7x1Y3cRfJeglzp5
-# EtMQkVn466S2oYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
+# gjcCARUwLwYJKoZIhvcNAQkEMSIEIFn5f/3HuZKuUySYp2oah1GAXbg1nwQw217r
+# imxG4/i8MA0GCSqGSIb3DQEBAQUABIICAHWkMoLG53jR3kNby5RWUSZuHYVPsR6/
+# RwG5eOJsDlfWJvPY7Gt8Ttaqa9xmOAM5956ZHW078c82RA41AOxC6/q1v6K5FYzK
+# B/xVoVP+DxQjII4YaD4lX35rFfd9T3deyLQEkTgEDfWOt63uvYGvoEMz98oykJ7i
+# 0SQI5kRQR1dVVM71ttR2A/L3sWgpiF/vJOfJ+DXHJ3R5J664ijeZ4mNHArE+xRH7
+# X0EKAZz0sGpmfLLrKv9KeSUSTwzkUB3QYOBA5EKbqjQ4wSKBQSRgRaPKPfcP2Q7Z
+# yG/5Hx2B80Tf7pY4oIv4ZCrWAGgsJ2VU2eH5lnDYoVwAmYruVs54VVMGTBUqd3o/
+# OBTka5ow70jpJN08ytcz+7NQhQtv46aqbx4CyVVq5NR13N8vrkUxmx9AGUW1BCdk
+# K7rgCS4e02ArkqxmxEDgyFl2IbL6J25WgU5rVQaDnUlQLs0maR7SUcmruqk10Uq6
+# 6GqfsuLWAyhQuGyYpwLisINbMKvlP+Ti21zyQH/AVptZX0WROanQUufuBi8qbjwq
+# 3Tn93U3w5Hc8yG0/aYo55R5eEh5sFM9zueCHIYxJxsIRySMMGc4aUt5Z8JI1mLOp
+# X9yJAuDFfD+gtBg4kXNaQdlBfi3ppGnpuJlVzxM7YMfU7qlHaQcnOKbvqMTBqLoC
+# DmFr3eQ86yugoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
 # A1UEBhMCVVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdp
 # Q2VydCBUcnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQ
 # BUSv85SdCDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzEL
-# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTExNTIwNDcwOFowLwYJKoZI
-# hvcNAQkEMSIEIKFuqojHCMf9Wsy+zSxQxAIAylMRrQwVefiC6Cs9Wxk8MA0GCSqG
-# SIb3DQEBAQUABIICAKIfYvUlLgx6fhTopBHN26sSxnBQG9HZzHfnzC7O3/e0Bxv9
-# SLIyIPe1r+Mp08zAhooMkdIbvBEDbjCUWj1ceXINDn/VrkPeYUtn1buCm+JTE/R1
-# Ki2v8itjI0o6M63Hb1/HRMHQhuWrtkT+jR7J2MesWvf/d6jVFWPJxX56EkK/9UbW
-# slQglYU0TzbaQstjhxFVd1oS3IMlfYqiLMqvgp9d5HmX0oRsGxf8Q2jk35lvGd2Z
-# CiO8SntuVMzxgCrbaxOW2A7QsUHieywq2qW2DRaZZxxMYAmxomj9NbG0zbdMZRUG
-# tOoc2imZumqpj4/tJaq8LFBBgxcr60TJdNMPB0wPT8DNrPwwfMFKRzkoRuHiS0ov
-# sxDOSvx6Xw1AvqOIXRItQJODwWp72a0fyRUpAUK5wpR5wS2p36OpJ2RF2yURgr1D
-# Oq1NeT5i1HbQzcA4eCmL6lsX4ik20qS3DI5A+cH0f1iS+6KKjGdN0pfn/+NosJz2
-# urJpZazosElM2x967ZbUhzyC0OxMi36jMUDjF8WPu3uX/U41i2G7Emu66XW9Elje
-# SR6vhABLWU0L3+yk+KSLuDgSZfrHbwPHOdqgXhRk4Qg2xRJx5+G2NtHQHRkG80Hr
-# gH7UqxNDPbbLh+hSTKJUuXEaEqnOEfANZF6q+0nuz3WMV784WaIyKExAjvV3
+# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTI0MDExOTExMDM0NVowLwYJKoZI
+# hvcNAQkEMSIEIKdSCji0uUE5NM+l3iW+NzMeNfAYLubfTt3EpN06FTVSMA0GCSqG
+# SIb3DQEBAQUABIICABpumezTdmn18LdtCphbOd/l+Dh30nrwplXlhiKJF/9NVZcw
+# ABKzw+Y4VFmTYaB/nDTFoDSr8P73RLVKnlE48l61SBn1G9OZMipwq+gKHJmKej5N
+# nYbf0fz36cb2iyrgxMTN0bGUcF59iG8M7V739FDilOmzqs6s9ujLJ3aB989k2wFq
+# XWlo2Cvlmx1e2VHsVcjKnImq9pY1UJ+8mcQE1UtcDJCjP+tMFQq7+GkBkqcHDwpv
+# 24B7DxcqIyQsPLdo3qD3CL0RopdyzWTbUOMy85PJgurE2fml5oJ3nn+vAKhDDMbR
+# /PzwzapkjjDOT0V9fMvdz6n8iKOdDQrjRks28zPqzVhNa38SIXyfobJOvbKPaO8c
+# eCt3qI4uHMy/2q8MN8GVQ8xggJO9QTzcbwDdqfuSYjwOeag6O4guLjEXG4fdJTTc
+# Gj9fvcf4ZbFUZ32DIKObqmselKy/QBT6OkuDuZBodc0tObCDmOxGbSNWq0bMlZsT
+# Rix2jE5wp78V18uxlO7/LL4PpmfzaxZhIS3kmoG3eWcv1u5R0UWYUV4leBE7xt5X
+# l8itfYNrylLPwciosfg9pIN6+T2bm2Zn/3uySwBd7gTQ1GLxjI8YgP7IvebSJdNP
+# wRl10NoXoS3Rxv1BaoF8VN4c14AsPMPV2hyF0BXd23JR7j3oMDD+HQ5W2jTf
 # SIG # End signature block

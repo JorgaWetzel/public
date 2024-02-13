@@ -1,35 +1,280 @@
-$DebloatFolder = "C:\ProgramData\Debloat"
-If (Test-Path $DebloatFolder) {
-    Write-Output "$DebloatFolder exists. Skipping."
+<#PSScriptInfo
+.VERSION 1.0.0
+.GUID 2186d699-12a7-4173-b47d-b8af76d7b314
+.AUTHOR AndrewTaylor
+.DESCRIPTION Bulk add Win32 apps to Intune using Enterprise App catalog
+.COMPANYNAME 
+.COPYRIGHT GPL
+.TAGS intune endpoint MEM environment win32
+.LICENSEURI https://github.com/andrew-s-taylor/public/blob/main/LICENSE
+.PROJECTURI https://github.com/andrew-s-taylor/public
+.ICONURI 
+.EXTERNALMODULEDEPENDENCIES
+.REQUIREDSCRIPTS 
+.EXTERNALSCRIPTDEPENDENCIES 
+.RELEASENOTES
+#>
+<#
+.SYNOPSIS
+Bulk add Win32 apps to Intune using Enterprise App catalog
+.DESCRIPTION
+.Displays available apps (or single app passed via parameter)
+.Grabs latest version
+.Deploys to Intune
+
+.INPUTS
+App Name, ClientID, ClientSecret, TenantID
+.OUTPUTS
+In-Line Outputs
+.NOTES
+  Version:        1.0.0
+  Author:         Andrew Taylor
+  Twitter:        @AndrewTaylor_2
+  WWW:            andrewstaylor.com
+  Creation Date:  05/02/2024
+  Purpose/Change: Initial script development
+.EXAMPLE
+N/A
+#>
+
+############################################################################################################
+#                                         Initial Setup                                                    #
+#                                                                                                          #
+############################################################################################################
+
+[cmdletbinding()]
+    
+param
+(
+    [string]$tenant #Tenant ID (optional) for when automating and you want to use across tenants instead of hard-coded
+    ,
+    [string]$clientid #ClientID is the type of Azure AD App Reg ID
+    ,
+    [string]$clientsecret #ClientSecret is the type of Azure AD App Reg Secret
+    ,
+    [string]$appname #Skips gridview if name specified
+)
+
+
+###############################################################################################################
+######                                         Install Modules                                           ######
+###############################################################################################################
+
+#Install MS Graph if not available
+if (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication ) {
+    Write-Host "Microsoft Graph Authentication Already Installed"
+} 
+else {
+    try {
+        Install-Module -Name Microsoft.Graph.authentication  -Scope CurrentUser -Repository PSGallery -Force 
+    }
+    catch [Exception] {
+        $_.message 
+    }
 }
-Else {
-    Write-Output "The folder '$DebloatFolder' doesn't exist. This folder will be used for storing logs created after the script runs. Creating now."
-    Start-Sleep 1
-    New-Item -Path "$DebloatFolder" -ItemType Directory
-    Write-Output "The folder $DebloatFolder was successfully created."
+
+
+#Importing Modules
+Import-Module Microsoft.Graph.Authentication
+
+###############################################################################################################
+######                                          Add Functions                                            ######
+###############################################################################################################
+Function Connect-ToGraph {
+    <#
+.SYNOPSIS
+Authenticates to the Graph API via the Microsoft.Graph.Authentication module.
+ 
+.DESCRIPTION
+The Connect-ToGraph cmdlet is a wrapper cmdlet that helps authenticate to the Intune Graph API using the Microsoft.Graph.Authentication module. It leverages an Azure AD app ID and app secret for authentication or user-based auth.
+ 
+.PARAMETER Tenant
+Specifies the tenant (e.g. contoso.onmicrosoft.com) to which to authenticate.
+ 
+.PARAMETER AppId
+Specifies the Azure AD app ID (GUID) for the application that will be used to authenticate.
+ 
+.PARAMETER AppSecret
+Specifies the Azure AD app secret corresponding to the app ID that will be used to authenticate.
+
+.PARAMETER Scopes
+Specifies the user scopes for interactive authentication.
+ 
+.EXAMPLE
+Connect-ToGraph -TenantId $tenantID -AppId $app -AppSecret $secret
+ 
+-#>
+    [cmdletbinding()]
+    param
+    (
+        [Parameter(Mandatory = $false)] [string]$Tenant,
+        [Parameter(Mandatory = $false)] [string]$AppId,
+        [Parameter(Mandatory = $false)] [string]$AppSecret,
+        [Parameter(Mandatory = $false)] [string]$scopes
+    )
+
+    Process {
+        Import-Module Microsoft.Graph.Authentication
+        $version = (get-module microsoft.graph.authentication | Select-Object -expandproperty Version).major
+
+        if ($AppId -ne "") {
+            $body = @{
+                grant_type    = "client_credentials";
+                client_id     = $AppId;
+                client_secret = $AppSecret;
+                scope         = "https://graph.microsoft.com/.default";
+            }
+     
+            $response = Invoke-RestMethod -Method Post -Uri https://login.microsoftonline.com/$Tenant/oauth2/v2.0/token -Body $body
+            $accessToken = $response.access_token
+     
+            $accessToken
+            if ($version -eq 2) {
+                write-host "Version 2 module detected"
+                $accesstokenfinal = ConvertTo-SecureString -String $accessToken -AsPlainText -Force
+            }
+            else {
+                write-host "Version 1 Module Detected"
+                Select-MgProfile -Name Beta
+                $accesstokenfinal = $accessToken
+            }
+            $graph = Connect-MgGraph  -AccessToken $accesstokenfinal 
+            Write-Host "Connected to Intune tenant $TenantId using app-based authentication (Azure AD authentication not supported)"
+        }
+        else {
+            if ($version -eq 2) {
+                write-host "Version 2 module detected"
+            }
+            else {
+                write-host "Version 1 Module Detected"
+                Select-MgProfile -Name Beta
+            }
+            $graph = Connect-MgGraph -scopes $scopes
+            Write-Host "Connected to Intune tenant $($graph.TenantId)"
+        }
+    }
+}    
+
+function getallpagination () {
+    <#
+.SYNOPSIS
+This function is used to grab all items from Graph API that are paginated
+.DESCRIPTION
+The function connects to the Graph API Interface and gets all items from the API that are paginated
+.EXAMPLE
+getallpagination -url "https://graph.microsoft.com/v1.0/groups"
+ Returns all items
+.NOTES
+ NAME: getallpagination
+#>
+[cmdletbinding()]
+    
+param
+(
+    $url
+)
+    $response = (Invoke-MgGraphRequest -uri $url -Method Get -OutputType PSObject)
+    $alloutput = $response.value
+    
+    $alloutputNextLink = $response."@odata.nextLink"
+    
+    while ($null -ne $alloutputNextLink) {
+        $alloutputResponse = (Invoke-MGGraphRequest -Uri $alloutputNextLink -Method Get -outputType PSObject)
+        $alloutputNextLink = $alloutputResponse."@odata.nextLink"
+        $alloutput += $alloutputResponse.value
+    }
+    
+    return $alloutput
+    }
+
+###############################################################################################################
+######                                     Graph Connection                                              ######
+###############################################################################################################
+##Connect using Secret
+$tenantId = $tenant
+write-output "Connecting to Graph"
+if (($clientsecret -eq "yes")) {
+ 
+    Connect-ToGraph -Tenant $tenant -AppId $clientId -AppSecret $clientSecret
+    write-output "Graph Connection Established"
+    }
+    else {
+    ##Connect to Graph
+    Select-MgProfile -Name Beta
+    Connect-ToGraph -Scopes "DeviceManagementApps.ReadWrite.All"
+    }
+write-output "Graph Connection Established"
+
+###############################################################################################################
+######                                    Make it so                                                     ######
+###############################################################################################################
+
+##Check if app has been passed
+if (!$appname) {
+
+##Get all apps
+write-host "Retrieving all apps"
+$url = "https://graph.microsoft.com/beta/deviceAppManagement/mobileAppCatalogPackages?`$apply=groupby((productId,productName,publisher))"
+
+$enterpriseapplist = getallpagination -url $url
+##Popup to select app
+$selectedapp = $enterpriseapplist | Out-GridView -PassThru
 }
 
-$templateFilePath = "C:\ProgramData\Debloat\removebloat.ps1"
+else {
+    ##Get single app
+    write-host "Single app selected, retrieving details for $appname"
+    $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileAppCatalogPackages?filter=productName eq '$appname'"
+    $selectedapp = getallpagination -url $uri
+}
 
-Invoke-WebRequest `
--Uri "https://raw.githubusercontent.com/JorgaWetzel/public/main/De-Bloat/RemoveBloat.ps1" `
--OutFile $templateFilePath `
--UseBasicParsing `
--Headers @{"Cache-Control"="no-cache"}
+##If selectedapp is single value, convert to array
+if ($selectedapp -is [System.Management.Automation.PSCustomObject]) {
+    $selectedapp = @($selectedapp)
+}
 
+foreach ($app in $selectedapp) {
 
-##Populate between the speechmarks any apps you want to whitelist, comma-separated
-$arguments = ' -customwhitelist ""'
+$selectedappid = $app.productId
+$appname = $app.productName
+$apppublisher = $app.publisher
 
+##Grab app details
+write-host "Selected App: $appname by $apppublisher"
+$selectedurl = "https://graph.microsoft.com/beta/deviceAppManagement/mobileAppCatalogPackages?`$filter=productId eq '$selectedappid'"
 
-invoke-expression -Command "$templateFilePath $arguments"
+$appdetails = getallpagination -url $selectedurl
 
+##Grab version details
+write-host "Retrieving latest version for $appname"
+$selectedversion = $appdetails | Select-Object -First 1
 
+$versionid = $selectedversion.id
+write-host "Version Retrieved: $versionid"
+
+##Convert to mobile app
+write-host "Converting to mobile app"
+$converturi = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/convertMobileAppCatalogPackageToMobileApp(versionId='$versionid')"
+
+$converted = (Invoke-MgGraphRequest -uri $converturi -Method GET -OutputType PSObject) | Select-Object * -ExcludeProperty "@odata.context", id, largeIcon, createdDateTime, lastModifiedDateTime, owner, notes, size
+
+##Converted, create app
+
+write-host "Creating app in Intune"
+$posturi = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps"
+
+$convertedjson = $converted | ConvertTo-Json
+
+Invoke-MgGraphRequest -Method POST -Uri $posturi -Body $convertedjson -ContentType "application/json"
+
+write-host "App $appname created in Intune, please assign"
+
+}
 # SIG # Begin signature block
 # MIIoGQYJKoZIhvcNAQcCoIIoCjCCKAYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAtEwvVFzQxQeLd
-# e13t03JHflEzESPceAnawvURR9Wwe6CCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCWqR1V/Ld/4BzZ
+# mle+tEoAaclsC2MYfTluAf2s+XPLKqCCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
 # 5+/bUOIIQBhaMA0GCSqGSIb3DQEBDAUAMGUxCzAJBgNVBAYTAlVTMRUwEwYDVQQK
 # EwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xJDAiBgNV
 # BAMTG0RpZ2lDZXJ0IEFzc3VyZWQgSUQgUm9vdCBDQTAeFw0yMjA4MDEwMDAwMDBa
@@ -211,33 +456,33 @@ invoke-expression -Command "$templateFilePath $arguments"
 # aWduaW5nIFJTQTQwOTYgU0hBMzg0IDIwMjEgQ0ExAhAIsZ/Ns9rzsDFVWAgBLwDp
 # MA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKECgAAwGQYJ
 # KoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQB
-# gjcCARUwLwYJKoZIhvcNAQkEMSIEIGjpsn9uNEma2eSQv2RubnvxQbT36SBGtCwK
-# aO9H0diBMA0GCSqGSIb3DQEBAQUABIICAB6C1txEZreicbIIuH+DN4K2eVpuMDYa
-# iaFy8b4T7KfPt8BwRu+M78G3r3jY2DmbquA3uDMvUCJzQfxRsvgazfYQ0Uteew2h
-# foNnD6TVvN811sH7c+0jWTHAS2AgOUXNLmx+CIzZFl5lMifJiIxiR+LlmfLJFMLE
-# GC2BBFNIQnglHrQV31iuK8XT/YTZS4JcvNLu0zb+vtwZbz9iK0RRl8m9RwVvLmVV
-# qJIpiM6ClAdex1DEGi30wP7dXQqibSJsYFR2nw6RFITe4srJQiySwdwtwF2LuyiO
-# OzaB3IE/pyGcedjEY+E1cuAI6wnkj8d+1dsWurQjc5I9NuK1IDxX3g45yj/LOIts
-# O2eHe4HZ8L40hQJpHaZHyHRTdM+d1OMo0V6hzHCmXzQKg+hmq11rI2qh6SbJF1gz
-# /2XKDt6u1NNBBnJK0zri9xeDDRLY73JDmM3aRyD4ybQ6u+PyjLXu329jS8TArp4s
-# kfCdyflUlfQP2op/kTQ50eK8IggtkiDjvseeCWhNSzlDD2JB7ZOwNDpzby3dZzlr
-# 5ncarJgL8SwHYlSvrKKSnYBiI96kfD5vfdSk7K4AIbqGg7JR2IPBTpdriTmFcuQ1
-# GhiZ3GTXx1+ETTxKcma8NXarCt7XHuUpoQ4dyLpJqYnargopFcurhLBqQsys2wIs
-# hlZohkAAn7IMoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
+# gjcCARUwLwYJKoZIhvcNAQkEMSIEIJpSCf47fpolVMUBUzjwgDxGOVSx1cUucVC1
+# VLPSOjDQMA0GCSqGSIb3DQEBAQUABIICAGFVcYQHle35TM/9/CZywn0QV6FijbBs
+# gyvGAjn/Gd0g8JAoCO7bhR7XuHvb6ypi+JzXEeX7Pm6Ui9X7XB+R2F5KIIHXoKZx
+# NZqGUo4Wfwb2dLB5HwA/7NGjm4H56IQXb4iy8N+y81PM6Q7Xitkux8xggQHtcHAI
+# jStbJN10Plo6Z4Q7y6Rr5jKP+cqmT4UwukZ2pAGrp9QumxnHKF76suiWlSCY2Hem
+# Sev56ijp2iuvBCFWKqmG0OGGZBuisiIiKT8jvnT/wPVQs02dzJ1cUSVnbkjYFGep
+# AMS8HJV2WDczglgLWPufv3UElJb8Jrkuzpn/S3OxCT0d8qe6aFlVTWu3lILPEbZb
+# Tn+mVBDcruym4XTAnbseH1whb/sVA/k9B+HNWfN/xOAs8w31WA/HdhUqEWz6Xu8m
+# ZggRCVQppuf9jRT9nKYcuLhOWfRsfWzyAbaN47eqbsn0SlfIENl62kCrB/Y/BglJ
+# UUBUtCbKEaKCR3O7mc+2JcC0hjTkwp6ezdb6mVakVpAZ/QkP6N2tweJhg6i3hGNX
+# 7KC2oMVxudi2EOfZ2zeUFrKh8pZIQKkWf/wRf2iXz7gq1tS34QGQKn3XkkfvN/iM
+# gou/Om3FzTNmrwovXMnX6bNinY0TOGJaYT7+wiY1Rgmc+r1kXeMLK0G3GLdj8/wH
+# yZg46CqbEq/hoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
 # A1UEBhMCVVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdp
 # Q2VydCBUcnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQ
 # BUSv85SdCDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzEL
-# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTExNTE4NDI0OFowLwYJKoZI
-# hvcNAQkEMSIEIEQV2/EibybcdMKyeSCMm63NcJIZMie+oLf9zrW+PZoEMA0GCSqG
-# SIb3DQEBAQUABIICAGBLSQ2auyuW69Z3kGM+gQqXo/W16vngUKbqH5YYqWiqNCT8
-# +k49fIxPgINfLaReFCtn2DrpNDOYoPlA6as9VSHJFrCq+p8QIpExI2syzxwj3Q9T
-# 2KqbHzbnm0wVv2jE0DusG/nIttTW4qoWdJ+zI4QVLKrKipvkGbaABMZ7JOVfgElf
-# nZ71zXIWoREb2ucu3AkgJdWmVIbEQqfptSY0iVQZm9Ib+GL4kdsHBPBDIbFu5E6P
-# fvIvS9w5RXCxRV4KtduQxsg7wVLAKYHA+pNbt2n97nnWaFcSz5gEK0OCJdDdUZnH
-# 2PR8ExpJo3eMDieP1AFQC6Kn75BQT9/XDq3Wn1VrnBChHWckeSrXyD7LrrHvdhso
-# 9OqP+8JIl1tRYlsYW0Juqt8TEpqGQClyzr03hUP5xfdfevMPRJp6rIoO9Qhy/jbR
-# 9GaaDWsAB46u8YOLdzcLoLAwPagBWt4avXm3175dR004pA6uTU44jlTgsCz+bsD/
-# grip+Xy2Ne9NuANJCc0n+YvdPcnwJgY5VFsfIZw07Qe5DeaaKWHDXjtSRrsrExIZ
-# XgkDaAdzjb4zxjG7qmQYFMlHqACReTMQhU70a2klWMDVPbArRAkbFbndT9QbSlEy
-# OC2vrl3ivLTYxmX7bdYG2QY46u6ve49RdDMmG84ENv/YJvg8gf8DQHrfP/5z
+# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTI0MDIwNTIyNTA1NVowLwYJKoZI
+# hvcNAQkEMSIEICV8+oCoUnIYNsj0+itfi1cu37Vpf1h2TOSN9pz7Dn4AMA0GCSqG
+# SIb3DQEBAQUABIICAIFPmGjJT24AcakWKG8Cag8642y4xO+8GBKqkNlEDIS6aq+X
+# ZKfZHivK6FiKydDXteDD53Oh5IF+8/T2JOwL9R+blcrOl0CjKJv8cbONgVSW4en8
+# b9gQAIsXGYYXMh02zaxXFUoRn5JVtOTJefuCF9ZlNWj8F2pJoWd/tKl73CTcyQn3
+# cV472bW2ZNrSuZPRdy1IGDWUI0Qj1vXU4HfjAyxVnR0DEgH8wLNN06MCzZ3Cu9bR
+# jYa5Wey4qSgiehD8crYvw1lY4c4dodH1LDeFuSNzN/fFnv8qmtnwej4u530YFXrt
+# jxNTTMCg2yHwOH0M2AvkBJisHZIBYjfNB9ReMorTMpY074UMfnqdZ6TmjNfHI4Qu
+# OQFbwuArgSWu+XtEune51VrMZGV8GwqruBt2Oe2JgGeRJBFPNqHvMAj71Y4d/Lbe
+# 6+BqjqstsHgNdxO6qBNad9Lp6ALi9l29wd/3jgwnxTpQOpjM7JZUa0RAc33yM9gr
+# G4owkzcIxME+0HDEP3JbgPHnpM5Les/SZezgFmQY34ZunWCCVzVT1CN4Wgascff6
+# e2ngDDlrnZH9db93dUUJwczzv4BOisAGnoJ1Sl7rLZAbdtpIhFHFihMHNiktR13t
+# kvYilh9lnd5J5qU061wlJlveBK9Rb6ei2+1XpB3GGlG7wIGxAdUcXpvjUZQZ
 # SIG # End signature block

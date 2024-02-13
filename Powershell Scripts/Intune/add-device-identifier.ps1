@@ -1,11 +1,11 @@
 <#PSScriptInfo
-.VERSION 1.0.2
-.GUID 26fabcfd-1773-409e-a952-a8f94fbe660b
+.VERSION 1.0.0
+.GUID 0ca99a7d-49d7-4ad5-a6ab-565f207c15f8
 .AUTHOR AndrewTaylor
-.DESCRIPTION Bulk Run remediations on demand
+.DESCRIPTION Bulk adds device identifiers to Intune
 .COMPANYNAME 
 .COPYRIGHT GPL
-.TAGS intune endpoint MEM 
+.TAGS intune endpoint MEM environment
 .LICENSEURI https://github.com/andrew-s-taylor/public/blob/main/LICENSE
 .PROJECTURI https://github.com/andrew-s-taylor/public
 .ICONURI 
@@ -16,22 +16,21 @@
 #>
 <#
 .SYNOPSIS
- Bulk Run remediations on demand
+Bulk adds device identifiers to Intune
 .DESCRIPTION
-.Bulk Run remediations on demand
+.Bulk adds device identifiers to Intune
 
 .INPUTS
-Device ID and Remediation ID (from Gridview)
+Serial number via either param or prompt
 .OUTPUTS
 In-Line Outputs
 .NOTES
-  Version:        1.0.2
+  Version:        1.0.0
   Author:         Andrew Taylor
   Twitter:        @AndrewTaylor_2
   WWW:            andrewstaylor.com
-  Creation Date:  06/09/2023
+  Creation Date:  09/01/2024
   Purpose/Change: Initial script development
-  Update 21/12/23: Scopes fix
 .EXAMPLE
 N/A
 #>
@@ -46,11 +45,9 @@ param
     ,
     [string]$clientsecret #ClientSecret is the type of Azure AD App Reg Secret
     ,
-    [string]$remediationid #ID of the remediation
-    ,
-    [string[]]$deviceid #ID of the device
-
+    [string]$serial #Serial Number of device
     )
+
 
 
 ###############################################################################################################
@@ -69,6 +66,11 @@ else {
 }
 
 import-module microsoft.graph.authentication
+
+###############################################################################################################
+######                                          Add Functions                                            ######
+###############################################################################################################
+
 
 Function Connect-ToGraph {
     <#
@@ -144,6 +146,104 @@ Connect-ToGraph -TenantId $tenantID -AppId $app -AppSecret $secret
         }
     }
 }    
+
+function checkserial {
+        <#
+.SYNOPSIS
+Checks if a serial already exists
+ 
+.DESCRIPTION
+Looks in device identifiers for an existing serial number 
+.PARAMETER Deviceserial
+Device serial number
+
+.EXAMPLE
+checkserial -deviceserial $serial
+ 
+-#>
+    [cmdletbinding()]
+    param
+    (
+        [Parameter(Mandatory = $false)] [string]$deviceserial
+    )
+
+    $uri = "https://graph.microsoft.com/beta/deviceManagement/importedDeviceIdentities/searchExistingIdentities"
+    $json = @"
+    {
+        "importedDeviceIdentities": [
+            {
+                "importedDeviceIdentifier": "$deviceserial",
+                "importedDeviceIdentityType": "serialNumber"
+            }
+        ]
+    }
+"@
+
+$serialcheck = Invoke-MgGraphRequest -Uri $uri -Method Post -Body $json -ContentType "application/json" -OutputType PSObject
+
+if ($serialcheck.value) {$checkreturn = $true} else {$checkreturn = $false}
+
+return $checkreturn
+}
+
+
+function addserial {
+        <#
+.SYNOPSIS
+Adds a new serial to device identifiers
+ 
+.DESCRIPTION
+Adds a serial number to device identifiers
+.PARAMETER Deviceserial
+Device serial number
+
+.EXAMPLE
+addserial -deviceserial $serial
+ 
+-#>
+    [cmdletbinding()]
+    param
+    (
+        [Parameter(Mandatory = $false)] [string]$deviceserial
+    )
+
+    $uri = "https://graph.microsoft.com/beta/deviceManagement/importedDeviceIdentities/importDeviceIdentityList"
+    $json = @"
+    {
+        "importedDeviceIdentities": [
+            {
+                "description": "Auto Imported",
+                "importedDeviceIdentifier": "$deviceserial",
+                "importedDeviceIdentityType": "serialNumber"
+            }
+        ],
+        "overwriteImportedDeviceIdentities": false
+    }
+"@
+
+Invoke-MgGraphRequest -Uri $uri -Method Post -Body $json -ContentType "application/json" -OutputType PSObject
+}
+
+###############################################################################################################
+#####                                      AUTOMATION CHECK                                             #######
+###############################################################################################################
+
+##Check if parameters have been passed
+if ($tenant -and $clientid -and $clientsecret) {
+    Write-Verbose "Tenant, Client ID and Client Secret passed"
+}
+else {
+    Write-Verbose "Tenant, Client ID and Client Secret not passed, grabbing from paremeters"
+
+###############################################################################################################
+#####                                       UPDATE THESE VALUES                                         #######
+###############################################################################################################
+## Your Azure Tenant ID
+$tenant = "<YOUR TENANT ID>"
+##Your App Registration Details
+$clientId = "<YOUR CLIENT ID>"
+$clientSecret = "<YOUR CLIENT SECRET>"
+}
 ###############################################################################################################
 ######                                        Graph Connection                                           ######
 ###############################################################################################################
@@ -156,110 +256,82 @@ write-output "Graph Connection Established"
 }
 else {
 ##Connect to Graph
-Connect-ToGraph -scopes "Group.ReadWrite.All, Device.ReadWrite.All, DeviceManagementManagedDevices.ReadWrite.All, DeviceManagementServiceConfig.ReadWrite.All, GroupMember.ReadWrite.All, Domain.ReadWrite.All, Organization.Read.All, DeviceManagementManagedDevices.PrivilegedOperations.All"
+Connect-ToGraph -scopes "DeviceManagementServiceConfig.Read, Domain.Read.All, Organization.Read.All, DeviceManagementConfiguration.Read.All"
 }
 Write-Verbose "Graph connection established"
-
-###############################################################################################################
-######                                          Add Functions                                            ######
-###############################################################################################################
-function getallpagination () {
-    [cmdletbinding()]
-        
-    param
-    (
-        $url
-    )
-        $response = (Invoke-MgGraphRequest -uri $url -Method Get -OutputType PSObject)
-        $alloutput = $response.value
-        
-        $alloutputNextLink = $response."@odata.nextLink"
-        
-        while ($null -ne $alloutputNextLink) {
-            $alloutputResponse = (Invoke-MGGraphRequest -Uri $alloutputNextLink -Method Get -outputType PSObject)
-            $alloutputNextLink = $alloutputResponse."@odata.nextLink"
-            $alloutput += $alloutputResponse.value
-        }
-        
-        return $alloutput
-        }
-
-        function getdevicesandusers() {
-            $alldevices = getallpagination -url "https://graph.microsoft.com/beta/devicemanagement/manageddevices"
-            $outputarray = @()
-            foreach ($value in $alldevices) {
-                $objectdetails = [pscustomobject]@{
-                    DeviceID = $value.id
-                    DeviceName = $value.deviceName
-                    OSVersion = $value.operatingSystem
-                    PrimaryUser = $value.userPrincipalName
-                }
-            
-            
-                $outputarray += $objectdetails
-            
-            }
-            
-            return $outputarray
-            }
-
 ###############################################################################################################
 ######                                              Execution                                            ######
 ###############################################################################################################
-write-output "Checking if remediation set in parameters"
-if (!$remediationid) {
-write-output "Remediation not set, getting all remediations"
-$remediations = getallpagination -url "https://graph.microsoft.com/beta/deviceManagement/deviceHealthScripts"
 
-write-output "Select remediation"
-$selectedremediation = $remediations | Select-Object displayName, id | Out-GridView -PassThru -Title "Select Remediation"
-$displayname = $selectedremediation.displayName
-write-output "Remediation $displayname selected"
-            
-
-
-$remediationid = $selectedremediation.id
+##Check if $serial parameter has been set
+if ($serial) {
+Write-Verbose "Serial passed via parameter"
+$global:serial = $serial
 }
 else {
-    write-output "Remediation set as $remediationid from parameters"
+    Write-Verbose "Serial Number has not been set, prompting for input"
+Add-Type -AssemblyName System.Windows.Forms
+
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "Input Form"
+$form.Size = New-Object System.Drawing.Size(300, 150)
+$form.StartPosition = "CenterScreen"
+
+$label = New-Object System.Windows.Forms.Label
+$label.Location = New-Object System.Drawing.Point(10, 20)
+$label.Size = New-Object System.Drawing.Size(280, 20)
+$label.Text = "Enter Serial Number:"
+$form.Controls.Add($label)
+
+$textBox = New-Object System.Windows.Forms.TextBox
+$textBox.Location = New-Object System.Drawing.Point(10, 40)
+$textBox.Size = New-Object System.Drawing.Size(260, 20)
+$form.Controls.Add($textBox)
+
+$button = New-Object System.Windows.Forms.Button
+$button.Location = New-Object System.Drawing.Point(100, 70)
+$button.Size = New-Object System.Drawing.Size(100, 30)
+$button.Text = "OK"
+$button.Add_Click({
+    $global:serial = $textBox.Text
+    $form.Close()
+})
+$form.Controls.Add($button)
+
+$form.ShowDialog()
+
 }
 
-write-output "Checking if device set in parameters"
-if (!$deviceid) {
-    write-output "No parameter set, grabbing devices"
-$devices = getdevicesandusers
+if ($global:serial -like "*`*,*") {
+    Write-Verbose "Multiple serial numbers detected, splitting"
+    $serials = $global:serial -split ","
 
-write-output "Select devices"
-$selecteddevices = $devices | Select-Object DeviceID, DeviceName, OSVersion, PrimaryUser | Out-GridView -PassThru -Title "Select Devices"
-
-write-output "Devices selected"
 }
 else {
-    write-output "Devices set from parameters"
-    $selecteddevices = $deviceid
-}
-$json = @"
-{
-	"ScriptPolicyId": "$remediationid",
-}
-"@
-$count = 0
-$alldevicecount = $selecteddevices.count
-foreach ($device in $selecteddevices) {
-    $count++
-    write-output "Running remediation on $device.DeviceName ($count of $alldevicecount)"
-    $deviceid = $device.DeviceID
-    $url = "https://graph.microsoft.com/beta/deviceManagement/managedDevices('$deviceID')/initiateOnDemandProactiveRemediation"
-    Invoke-MgGraphRequest -uri $url -Method Post -Body $json -ContentType "application/json"
-
+    Write-Verbose "Single serial number detected"
+    ##Convert to single item array
+    $serials = @($global:serial)
 }
 
-
+    foreach ($indivserial in $serials) {
+        Write-Verbose "Processing serial number: $indivserial"
+        ##Check if it already exists
+        $check = checkserial -deviceserial $indivserial
+        if ($check) {
+            Write-Verbose "Serial number already exists, skipping"
+            continue
+        }
+        else {
+            Write-Verbose "Serial number does not exist, continuing"
+            addserial -deviceserial $indivserial
+        }
+        Write-Verbose "Completed processing serial number: $indivserial"
+    }
 # SIG # Begin signature block
 # MIIoGQYJKoZIhvcNAQcCoIIoCjCCKAYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDgvLxUj/dni/3W
-# nrP/2147LHgJjnzvHJdHVCgnj38eN6CCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCC51VOuZmF+JxBj
+# FRPgHLYKrL3q2X1iWMPwJq2EB2FpU6CCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
 # 5+/bUOIIQBhaMA0GCSqGSIb3DQEBDAUAMGUxCzAJBgNVBAYTAlVTMRUwEwYDVQQK
 # EwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xJDAiBgNV
 # BAMTG0RpZ2lDZXJ0IEFzc3VyZWQgSUQgUm9vdCBDQTAeFw0yMjA4MDEwMDAwMDBa
@@ -441,33 +513,33 @@ foreach ($device in $selecteddevices) {
 # aWduaW5nIFJTQTQwOTYgU0hBMzg0IDIwMjEgQ0ExAhAIsZ/Ns9rzsDFVWAgBLwDp
 # MA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKECgAAwGQYJ
 # KoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQB
-# gjcCARUwLwYJKoZIhvcNAQkEMSIEIJZwRgKUJDN4ScKeuKE8lArjtB5THOIjI2SQ
-# 9XjMzH+AMA0GCSqGSIb3DQEBAQUABIICAH7CCXtQFBe14cjoiYmHjaKE3Lc28j9o
-# qg2pTDqIYq6BoG1dmihKGHFqcMu3TDxtBdm/jIcgvzNb7JmVNvEsFW0weNjb7XcW
-# mVai4qaawtKGtNBWHW6fL79tSKFMPV80fotjkwaSbHNrm5PonLlJNFr4EG+L0AdJ
-# 9oQBJ+ic1evz80xK6DYYG+9zhTb2GYF70QBt9WZHQF7+m96jNAOlluzPNV9jxnF/
-# XiD2ONA5udwA2O7ZkoojI8aB9AeA6EqgZ34tAQVvbF+5YoAd/Q1rhNiwEjHPuAIv
-# 2WiAFsoSYvZFKZ4FWeP76BlVocZdUezQIRH1Mo5idjepKiojYc0T/4gxbJOZoS5W
-# wvT4SqZBxT5me97SIBfZvABHlCN8bx2CFs+PY6cg5Z6rfF6I92ySAjtvlVnRAAnH
-# w9a961sBksh//MPHbMnnQEbXqMTnBkiR4OKm2Lpv4eiPOrK9I4ygZKxh7DLPbms0
-# tasB41Cd328jMrgbjBIcgrsVT5kB2dgaEODjtEHIGiGtgikpt60rPBNj8Mo9hqGF
-# NooRvyiL17N94yVdB9ua0V3DjkiGyPLICPbt6TudGO2gPbdrwEEJzLRfqzvKG4uo
-# bom8PW+CwyYVCJgf1Ncofba0V2TtwUSNBffx/f6EZxjcMKshIHqvgehhMJLX8hKr
-# Z/rt2b46CTHfoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
+# gjcCARUwLwYJKoZIhvcNAQkEMSIEIFyRIOgJ9u3Lyvktin9862ohVZhMlR1EpAyS
+# tUlvgC2KMA0GCSqGSIb3DQEBAQUABIICAE1JBTV6PraYW3o6FdIzRdQRw884TWSB
+# ni4ofCz/pG0RacBNISZpM91VtxxOeeWALAmFVBturqgXZ9Ta+DCP32QBWUuKl8K1
+# euPVUk9NHgWEAbIVbfPP9hd+Ooq9h14/OkLdHpihdZ5YtRgh73go7z/guEXJ2XtV
+# CvfGN12+HtfkE9XgD+KoRRQnZ4AP17q0ieNUFioWe3mVnspBZgZ9ysYDXhaxEcfx
+# toMjBBVP4FHZzGFvqUnEq+sJjWaM1C+RS7jS0YTfHa1Z8En0LtwWfheWltAzmPr7
+# ePgxVbOfbUa0sCtIkE9XdHGycKOIz1nz/aOJHYg+ejGoQ2pcqbCOFeAtKss6miCI
+# iLSDGGoHK7R4nffQJKeu20R+y1+5Q/UQWYd+y+rKV9Ra1DqAB6bsv4NXddSUVmeY
+# uZBp+gddaAAdAAnRfrNlTa7JrsFfcHairmSE9JuYjdZuoxAwyNuoC/JIeSQatj5x
+# 2S0VWx+RHiCnOZqjPRv/P3OFjL0/WXV3keUyxDZ0UsIg7tX+m73iyuz65H5ulmP1
+# i3YyEqSVtAu+5JGCJXQJCe74zLmCKzkUZWZlKR0ge3dTVEhYDUFPMupV++1X/pFK
+# BgklXbgWt1CTKj1dW5W92Mro2dBYs4PcCPDqdvxqZlGotrDd/pykJXFRXl36GzuW
+# IZdTaw1D1h8SoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
 # A1UEBhMCVVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdp
 # Q2VydCBUcnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQ
 # BUSv85SdCDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzEL
-# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTIyMTIxMzUxMVowLwYJKoZI
-# hvcNAQkEMSIEIFN0vE1S8wb+Rd2XCq12x0D+okw9JX/p362CVNmXTUEzMA0GCSqG
-# SIb3DQEBAQUABIICACkkNstM87MdyGgUzYwtv47uGnLOdG298RihUtBl6d7JGYGV
-# fwyB3uIwLblc2rdKo4+YH71cxtvVLSNDTx6jc4IkzrOtCqko+r34ZLriL8CdSnDj
-# 9dHP1m0CxTbFWwarzqFv13uO9bMebcLr+3ycdI92l0NzKWbx1srTE9xI5oSDd12q
-# CmhXDJVhywrvsDCcuaiKImbcfKJG6YJzUyOGx560uR5eUMEr0MT9eZ6HPekY7OVa
-# x58wkVbJEhFG/Xl2JF3mLH+0c7bc2tAtLsjGBEnVhpmraB3DhoVreLtkEX6xPy2/
-# nDhOf+NBha5ie+v7TxN+99iC71g5KqAABx534SDTvRPu2tP6FPKQyq3xHJwfAUrU
-# bMfBwGg4bABkQL3NG1E1/y512OBlYanMXhNIAiJDZQD3d0IiAIFbPn93S/3/uxtm
-# 4uBIZMoGXHYuFoCdFM48iQBcQnXQ/9f3u10/J0GrFwsKVCLyxcPY7jaT+YTtpyrn
-# 43NxdiRT9e5N8eV2dTadr7xxOhyaqWZfxmuPaCAqNTavkzP0OcuhwzPu/0E3F4eQ
-# xb04oDWplcNW5lKrM9EWzS8QyT1BrwkgQi0rsA37V6rE+ketxTnQ1ewAGyhvgrdD
-# rVms1MBMrVJM8kk1YcHFsq9hLnlXx48hDgFiJ7BcyEX1LDA0n8N0UNhfaCUo
+# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTI0MDEwOTEzNDgwN1owLwYJKoZI
+# hvcNAQkEMSIEIFk5wC8U2tU1qzjOrfHSkvsTs1axGGLm2s8uHT1T/r5hMA0GCSqG
+# SIb3DQEBAQUABIICAETp+tnRfWN9Msj3NpARnENIxBG/y4hD+hB6WU7JWnO1O7yx
+# 13E1ZpjVsVqzRpJDTDXn4QDjd+Bcidtsy9XcAMzyVnwiQvVz93LBLDh2PjifeuJf
+# dlYalBXLkO2B06E/hgCVegqoDKYWd/FtoQDLNdP9pd7xh+3VsVKxGpStsGaHH9qj
+# MYdcFPxvILfZBz5QJAxmUy4atMXtFKbyzrChuRZEcXjzc1WNGAvhhJGIE5G9GZZ7
+# b0WQLlIP1UHYAogA2hA/mIdhnG8aEZ6365LSwp59OuVCF7pxYYE1t9OfBUkfHB5w
+# b09A+u057WFn/ADm5BagrpAwkEs0zA3f38ZPMG7aNVLHqFl/8SuI2mMHMGxL2ZYK
+# U//dIljnXoBBmX0+rB1AXdG/NDGfPwTDdHWwkgMgNr4ambi2ol8DhiC7Y7T1i0iJ
+# u84j72521xZHveKa+se2uWTWoRUqa62pRvzrgHTSgsEFvZ3PUM+1l2HLIO05a3A1
+# cS6U8BwIhzOityBYz93ExKLeRCYbUO1VKIHm9blqp2nx4wJA+PIWePtfGp8NRpXc
+# D1QuUcWmadUVgXECBBUJI7vhXOYfKtDpL4eCH5ht9LVOTaznb2yohScnZs1e9xEI
+# IBZE9ZyceGnzAuq2qUp8Zff5Q6LZLgBVCoEe36j0XrHaC0vMbKuERJ+MTsED
 # SIG # End signature block

@@ -16,12 +16,12 @@ None
 .OUTPUTS
 Creates a log file in %Temp%
 .NOTES
-  Version:        6.2.2
+  Version:        6.2.4
   Author:         Andrew Taylor
   Twitter:        @AndrewTaylor_2
   WWW:            andrewstaylor.com
   Creation Date:  24/11/2022
-  Updated: 03/09/2023
+  Updated: 06/12/2023
   Purpose/Change: Initial script development
   Change: Added support for W365 Provisioning Policies
   Change: Added support for W365 User Settings Policies
@@ -68,6 +68,7 @@ Creates a log file in %Temp%
   Change: Added logging during runbook
   Change: Added support for template creation
   Change: Set connection to use basic parsing for runbooks
+  Change: Fix for Boolean custom policies
 
 
   .EXAMPLE
@@ -75,7 +76,7 @@ N/A
 #>
 
 <#PSScriptInfo
-.VERSION 6.2.2
+.VERSION 6.2.4
 .GUID 4bc67c81-0a03-4699-8313-3f31a9ec06ab
 .AUTHOR AndrewTaylor
 .COMPANYNAME 
@@ -4434,14 +4435,18 @@ function getpolicyjson() {
              
              if ($null -ne $policy.omaSettings) {
                 $policyconvert = $policy.omaSettings
-             $policyconvert = $policyconvert | Select-Object -Property * -ExcludeProperty isEncrypted, secretReferenceValueId
+             $policyconvert = $policyconvert | Select-Object -Property * -ExcludeProperty secretReferenceValueId
              foreach ($pvalue in $policyconvert) {
              $unencoded = $pvalue.value
-             $EncodedText =[Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($unencoded))
-                $pvalue.value = $EncodedText
+             ##Check if $unencoded is boolean
+             if ($unencoded -is [bool] -or $unencoded -is [int] -or $unencoded -is [int32] -or $unencoded -is [int64]) {
+                $unencoded = $unencoded.ToString().ToLower()
+            }
+            $EncodedText =[Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($unencoded))
+            
+$pvalue.value = $EncodedText
              }
-             $policy.omaSettings = $policyconvert
-
+             $policy.omaSettings = @($policyconvert)
             }
          # Set SupportsScopeTags to $false, because $true currently returns an HTTP Status 400 Bad Request error.
     if ($policy.supportsScopeTags) {
@@ -6290,8 +6295,8 @@ else {
 # SIG # Begin signature block
 # MIIoGQYJKoZIhvcNAQcCoIIoCjCCKAYCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBZp26DFYMu2C9S
-# Sxw+E021HdQIFQN2+c9LqcbRtnqsLKCCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDJPg9FGe8BqpOU
+# pL3V5eHHp7nxmmtepMT7Zx2TwEfPe6CCIRwwggWNMIIEdaADAgECAhAOmxiO+dAt
 # 5+/bUOIIQBhaMA0GCSqGSIb3DQEBDAUAMGUxCzAJBgNVBAYTAlVTMRUwEwYDVQQK
 # EwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xJDAiBgNV
 # BAMTG0RpZ2lDZXJ0IEFzc3VyZWQgSUQgUm9vdCBDQTAeFw0yMjA4MDEwMDAwMDBa
@@ -6473,33 +6478,33 @@ else {
 # aWduaW5nIFJTQTQwOTYgU0hBMzg0IDIwMjEgQ0ExAhAIsZ/Ns9rzsDFVWAgBLwDp
 # MA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcCAQwxCjAIoAKAAKECgAAwGQYJ
 # KoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQB
-# gjcCARUwLwYJKoZIhvcNAQkEMSIEIK9tzzrW7SV0eT6Znql2epNYh8KjhVun8hgb
-# AVHmg1hMMA0GCSqGSIb3DQEBAQUABIICAEcRmFj5Lbr3E4+lgjzXnz9AjHHhPEva
-# j+akIrMKwA9u2hd3TTyFjbydt8KK0z48XUAwU8T262XvFQP8e3I8av861ZKHvxq2
-# jO1HtfScuCP8E4DkHaaO7zmPQIF2eKGutcXTQyjqQfdaJMHti7xjxAZw08jp14tO
-# qZ6oSBQ8jXNtWlQ0vXPn6qfwqhV8ajnmSjcXt1+yikphlluMEnHoeTkYVziHpW5j
-# khvVkjdqGpNP/dWKGnqPfM1NkgbEIUW8n6s1e/lSivX1qcURfXwIoaCdQP/Fhn95
-# DJT7cwSvVhNa5UVkgsNo+ef2+H9wowRxMgBFhzCqlYAA1l2jvSfjlFwaFW7vY2kZ
-# 2AGv/hxqrNOon8l90WnClygoQt+NzhSZ2bslgzVdykKjgPuSocbWwDpJj3S95Y9N
-# NTH/hDRfxsRxXEWOI+Nbz97J8ZmYwUQC67EVl5n273c7y3uhpZp6Cc1jrmQpZgBi
-# ftX+DlTynTZuMfGC+SMW4RLHG8MwGNXWLTUcgMS2XiAHfHCGuRVXwsYoKyNBlvh1
-# 6IJa527yi1zekeTFr2pMkExuyXrcI85cho5wyYY1TDlUQfNXUuoXBKBrhqbVLnYa
-# 3BSSIVu7AsU5isu5GlAyhP3NSWwDvnCPsFHdkuyYTXcSPZq0gfUzfGN22rt1yU6v
-# 0kjAPBNZVkKAoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
+# gjcCARUwLwYJKoZIhvcNAQkEMSIEIG39/L+gUIFsk9QzC7+YaiAQ5qlzkzeLHEnc
+# MgV8mexKMA0GCSqGSIb3DQEBAQUABIICAEw3at9Eeb4ouj+jC7y4sQOkHfDMlOlT
+# KLCE2178w9H6XBa7w+c/27CZGm4V3pXZk1VUZYe1XZRIXenJuSeqi2eUaSvl0BlQ
+# ywtx4V7Y7+9YF5cDRaZqseAbfx1kzEt0ZLHlCOvPaJOCi8DfcL3QXwoB9XOMHJwo
+# etiKqPhfmtPH5rDZ4rXQgblsFkZOexDyuiFpMxncdmroe+OSLWMa77AbNmMtTjpU
+# J8nk9YVqzY8PKyFaTCllv0ZbqvVZvST6bkOG5q/FaDpUqYNc5GTonmF+uLaOZtRt
+# bRv+bdExQ3HdPeMyUKVf5Z7e6x/t/EqJtOecNgDpVOZwl0DzevqVtP9jV+K2WJgQ
+# y8PDtLBkNQ0sFsO+SRfYpGudIglzOpbGcItGf5uKtyU9B9HU8rzhhMvcDfxzaDut
+# kdGxcpqnZvUijZ5Dyj/U60+7kKNEDEZkDsvB3KOObC1rii+gpEIOjWyA2QTpJG5k
+# 8df78uOXFKPFqUTtLksdGwGMU7tUDExPVYO9T2Pl6aZrvpvjfuqE5SqrcuotPqQQ
+# 0Yd01PEToqIHENVRhHiuRcd9y9lX7UBjyh1LxSOV5sJ/zGeDnsF+f2j+VOLQF5A9
+# 5130SlNgjBkIIxJZyXkahPuW99AZfEGwPw2X9nSVfyGZBvfYjxYjY8VBHM8sGKsG
+# PyaG3HttMcmToYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkG
 # A1UEBhMCVVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdp
 # Q2VydCBUcnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQ
 # BUSv85SdCDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzEL
-# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMTExNTIwNDc1MFowLwYJKoZI
-# hvcNAQkEMSIEIKQQZE9/V7hYvsH6puYB+JIQZOcqb6dHl4NQQdf/DrTRMA0GCSqG
-# SIb3DQEBAQUABIICAABPdp20Xiss7MghTtSXzxBXsYa3SCPJQ4GDq0wT+BktIyyq
-# nhj9KohuDzqsTl32VxjR/kPGG7XXwy4Jnkh3fCjrtEOu+eMDv83nsx1OKD7gi44x
-# BaPjXUXqnbyKYKXT9OSV2trvV5t1ogjKQpaugkE9wjV8++JPdRGywHhy+AD1KNnR
-# C+wJ8/7tnzr4pW+7rssyHvOfzpYZ8+zM/E7RMwitcZrzeGOVOfdNBle+H48Gc5oX
-# TMhwVs0Uaw5tV2bT5Y3k5T47Let4PKZYEJRBwokr0iKh0PnBWJHEfLUxhMXV8H2P
-# 3fF4abeCN4A++lnhWEkGW1n1ozzD9OsHwcRSL2mC3WW1Yj1rinCHH/fZY/0d3LY2
-# GenEj0AZRdk1D2nWzlU7DHhD+uoZ6JmH0c2cglcPEztII89DTCd40gwQj/GX9zYG
-# Q+7a/aoEaz6zAtcXA04pzm38Vp4SG5oq3+QtMtKBO2GX2EqhE/4MZhwh4CUQBkET
-# BAvrOEks82LDzGYNV0bWSauEEnAe99p3IXOebVTQ3jTRiaBquqWQKeukXy2F6NFq
-# LNObmknW4f9QnmZtc5UzppCg0QOU0uQ7eKxs1ufOUYnGhSowxx86DIzeFsHrjkCs
-# bsgTnl8xGXyx4Tv1SzJCJpg3tg180xoybrZuZvE1gmi+f/YsZmdHbvjn3RiB
+# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTI0MDExMjE1MTY0NFowLwYJKoZI
+# hvcNAQkEMSIEIBka6yPphMDbDhWGft1DmwaYfyR3IBdRMR1C++Hq2kAEMA0GCSqG
+# SIb3DQEBAQUABIICAB/ZS0pdsO4Cm28nzdXPsxkP3kXWlvgcxphZr9cYplkplSqI
+# B1WPC40FdP8mxOZUedC/FoQp3jC4eRqbj4CZMv3zau7+2TvCeWs/RK9pi9b9O4qn
+# 1LH0WxEdL0N6LyZNSBtEqkbWCnXc9HQFIkVJTJsruQ+t93xp1+4zAWI23R2dZjp/
+# Gdt6W9TwbQ+jJdW/r4FIl1SR694lllca8IrJLvWi6mT9j8DLeR4F8wADlcCERPDB
+# z0qMROL6q4/29Dx9D8hTqWI/gfeA3SiYETQVF52HedoMFTGXo1uolKKm8tO9njuv
+# mwAUDwUXHJL8SQeW/x1KWiZtIgNOqq4I88pVJ2noyMmv7bSBjQCcEaNvZktCaON3
+# ks9TedSU0WUD5h3g9yo+7a0iHTGwtSTtLmm6mxzq/kpE+vpXk1jGBNe67QdSMBor
+# hJuX7yXCajefjJ9bgGdVF+1ffxvjTB0s3/a/7ndixHxLQplckdP9qvYm/e17VBef
+# BpfyuNfTSKseyUQJ6TPnM+3fpIg7kA1UUumWzfhj/nSeX39xRbiwPeuXuBnF4317
+# eK5W27X6FDbmAyZdHeScNV01UcXqDSlZtXqL1N+fq1qHVSkE3M27sWRPUhW4F3sB
+# 2JqJ/tX5xhlMpQeskJWWQfVp41ItsN6tWUKEqeoTRJCENl5ANScozdqGV6Ld
 # SIG # End signature block
